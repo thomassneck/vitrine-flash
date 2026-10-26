@@ -55,7 +55,7 @@ function ContenuVitrine() {
     return false;
   };
 
-const lancerReservation = async (canal) => {
+  const lancerReservation = async (canal) => {
     if (!prenom.trim() || !telephone.trim()) {
       alert("Merci d'indiquer votre prénom et votre numéro de mobile 😊");
       return;
@@ -63,59 +63,38 @@ const lancerReservation = async (canal) => {
 
     setEnvoiEnCours(true);
 
-    try {
-      const res = await fetch("/api/reserver", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          article_id: articleSelectionne.id,
-          prenom: prenom.trim(),
-          telephone: telephone.trim(),
-          canal: canal,
-        }),
-      });
+    const res = await fetch("/api/reserver", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        article_id: articleSelectionne.id,
+        prenom: prenom.trim(),
+        telephone: telephone.trim(), // <-- On envoie le 06 à Supabase
+        canal: canal,
+      }),
+    });
 
-      const { codeResa, heureFin } = await res.json();
+    const { codeResa, heureFin } = await res.json();
 
-      // Met à jour la grille pour griser l'article
-      setArticles((prev) =>
-        prev.map((a) =>
-          a.id === articleSelectionne.id
-            ? { ...a, statut: "confirme" }
-            : a
-        )
-      );
+    setArticles((prev) =>
+      prev.map((a) =>
+        a.id === articleSelectionne.id
+          ? { ...a, statut: "pre_reserve", pre_reserve_jusqua: new Date(Date.now() + 15 * 60000).toISOString() }
+          : a
+      )
+    );
 
-      // Préparation du message pré-rempli pour Marion
-      const telPro = boutique.telephone_pro;
-      const texte = `Bonjour ${boutique.nom} ! C'est ${prenom} (${telephone}). Je souhaite mettre de côté : "${articleSelectionne.titre}" (${articleSelectionne.taille} - ${articleSelectionne.prix}€) jusqu'à ${heureFin} (Réf: #${codeResa}).`;
-      const texteEncode = encodeURIComponent(texte);
+    const telPro = boutique.telephone_pro;
+    const texte = `Bonjour ${boutique.nom} ! C'est ${prenom} (${telephone}). Je souhaite mettre de côté : "${articleSelectionne.titre}" (${articleSelectionne.taille} - ${articleSelectionne.prix}€) jusqu'à ${heureFin} (Réf: #${codeResa}).`;
+    const texteEncode = encodeURIComponent(texte);
 
-      const lienAction =
-        canal === "whatsapp"
-          ? `https://wa.me/${telPro.replace("+", "")}?text=${texteEncode}`
-          : `sms:${telPro}?&body=${texteEncode}`;
+    setEnvoiEnCours(false);
+    setArticleSelectionne(null);
 
-      // 👉 AU LIEU DE FAIRE window.location.href IMMÉDIAT :
-      // On mémorise le ticket pour l'afficher à l'écran
-      setTicketConfirmation({
-        codeResa,
-        heureFin,
-        titre: articleSelectionne.titre,
-        taille: articleSelectionne.taille,
-        prix: articleSelectionne.prix,
-        lienAction,
-        canal,
-      });
-
-      // On ferme la fenêtre de saisie
-      setArticleSelectionne(null);
-      setPrenom("");
-      setTelephone("");
-    } catch (e) {
-      alert("Erreur lors de la réservation. Veuillez réessayer.");
-    } finally {
-      setEnvoiEnCours(false);
+    if (canal === "whatsapp") {
+      window.location.href = `https://wa.me/${telPro.replace("+", "")}?text=${texteEncode}`;
+    } else {
+      window.location.href = `sms:${telPro}?&body=${texteEncode}`;
     }
   };
 
@@ -201,60 +180,81 @@ const lancerReservation = async (canal) => {
         </div>
       </main>
 
-{/* NOUVELLE MODALE : TICKET DE CONFIRMATION AVEC LE CODE #BM-XXX */}
-      {ticketConfirmation && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl text-center animate-in zoom-in-95">
-            <span className="text-3xl mb-2 block">🎉</span>
-            <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-100 px-3 py-1 rounded-full">
-              C'est mis de côté !
-            </span>
-
-            <h3 className="text-xl font-black text-stone-900 mt-3 mb-1">
-              Réservation confirmée
-            </h3>
-            <p className="text-xs text-stone-500 mb-4">
-              Votre pièce est gardée en cabine chez <strong>{boutique.nom}</strong>.
-            </p>
-
-            {/* LE TICKET AVEC LA RÉFÉRENCE */}
-            <div className="bg-stone-50 border border-stone-200 rounded-2xl p-4 mb-4 text-left space-y-1.5">
-              <div className="flex justify-between items-center pb-2 border-b border-stone-200">
-                <span className="text-xs text-stone-500">Votre référence :</span>
-                <span className="text-sm font-black font-mono bg-stone-900 text-amber-300 px-2.5 py-0.5 rounded-lg">
-                  #{ticketConfirmation.codeResa}
+      {/* MODALE DE RÉSERVATION AVEC PRÉNOM + TÉLÉPHONE */}
+      {articleSelectionne && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl animate-in slide-in-from-bottom">
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <span className="text-xs font-bold uppercase tracking-wider text-emerald-600">
+                  Mise de côté gratuite
                 </span>
+                <h3 className="text-lg font-bold text-stone-900">
+                  {articleSelectionne.titre} ({articleSelectionne.prix} €)
+                </h3>
               </div>
-              <p className="text-xs text-stone-800 font-semibold pt-1">
-                👗 {ticketConfirmation.titre} ({ticketConfirmation.taille})
-              </p>
-              <p className="text-xs text-stone-600">
-                💰 {ticketConfirmation.prix} € (à régler sur place)
-              </p>
-              <p className="text-xs text-amber-700 font-medium">
-                ⏳ Bloqué jusqu'à <strong>{ticketConfirmation.heureFin}</strong>
-              </p>
+              <button
+                onClick={() => setArticleSelectionne(null)}
+                className="text-stone-400 hover:text-stone-600 text-xl font-bold px-2"
+              >
+                ✕
+              </button>
             </div>
 
-            {/* BOUTON OPTIONNEL POUR ENVOYER LE MESSAGE */}
-            <a
-              href={ticketConfirmation.lienAction}
-              className={`w-full py-3.5 px-4 rounded-xl text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md mb-2 ${
-                ticketConfirmation.canal === "whatsapp"
-                  ? "bg-emerald-600 hover:bg-emerald-700"
-                  : "bg-stone-900 hover:bg-stone-800"
-              }`}
-            >
-              <span>{ticketConfirmation.canal === "whatsapp" ? "🟢" : "💬"}</span>
-              Prévenir Marion par {ticketConfirmation.canal === "whatsapp" ? "WhatsApp" : "SMS"}
-            </a>
+            <p className="text-xs text-stone-600 mb-4 leading-relaxed">
+            Nous mettons cette pièce de côté en cabine <strong>le temps de votre passage</strong> (jusqu'à demain 14h si réservé en soirée). Sans engagement et sans paiement en ligne !
+            </p>
 
-            <button
-              onClick={() => setTicketConfirmation(null)}
-              className="w-full py-2 text-xs text-stone-400 hover:text-stone-700 font-medium"
-            >
-              Fermer et retourner à la vitrine
-            </button>
+            {/* Champ Prénom */}
+            <div className="mb-3">
+              <label className="block text-xs font-semibold text-stone-700 mb-1">
+                Votre prénom (pour l'étiquette en cabine) :
+              </label>
+              <input
+                type="text"
+                placeholder="Ex: Julie"
+                value={prenom}
+                onChange={(e) => setPrenom(e.target.value)}
+                autoFocus
+                className="w-full border border-stone-300 rounded-xl px-4 py-2.5 text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-stone-900"
+              />
+            </div>
+
+            {/* NOUVEAU : Champ Numéro de Téléphone */}
+            <div className="mb-5">
+              <label className="block text-xs font-semibold text-stone-700 mb-1">
+                Votre numéro de mobile :
+              </label>
+              <input
+                type="tel"
+                placeholder="Ex: 06 12 34 56 78"
+                value={telephone}
+                onChange={(e) => setTelephone(e.target.value)}
+                className="w-full border border-stone-300 rounded-xl px-4 py-2.5 text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-stone-900"
+              />
+            </div>
+
+            <div className="space-y-2.5">
+              <button
+                onClick={() => lancerReservation("sms")}
+                disabled={envoiEnCours}
+                className="w-full bg-stone-900 text-white font-semibold text-sm py-3.5 rounded-xl flex items-center justify-center gap-2 shadow-md active:scale-98"
+              >
+                <span>💬</span> Envoyer ma réservation par SMS
+              </button>
+
+              <button
+                onClick={() => lancerReservation("whatsapp")}
+                disabled={envoiEnCours}
+                className="w-full bg-emerald-600 text-white font-semibold text-sm py-3.5 rounded-xl flex items-center justify-center gap-2 shadow-md active:scale-98"
+              >
+                <span>🟢</span> Réserver via WhatsApp
+              </button>
+            </div>
+
+            <p className="text-[11px] text-center text-stone-400 mt-3">
+              Le message est déjà pré-rempli, il vous suffira d'appuyer sur "Envoyer" dans votre application.
+            </p>
           </div>
         </div>
       )}
