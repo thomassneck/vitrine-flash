@@ -199,7 +199,7 @@ function ContenuVitrine() {
             </div>
 
             <p className="text-xs text-stone-600 mb-4 leading-relaxed">
-              Nous mettons cette pièce de côté en cabine jusqu'à <strong>ce soir 18h00</strong>. Sans engagement et sans paiement en ligne !
+            Nous mettons cette pièce de côté en cabine <strong>le temps de votre passage</strong> (jusqu'à demain 14h si réservé en soirée). Sans engagement et sans paiement en ligne !
             </p>
 
             {/* Champ Prénom */}

@@ -2,19 +2,23 @@ import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 
 function calculerHeureMax() {
-  const maintenant = new Date();
-  const heure = maintenant.getHours();
-  const jour = maintenant.getDay(); // 0 = Dimanche, 1 = Lundi, etc.
+  // Récupération de l'heure et du jour dans le fuseau horaire de Paris
+  const dateFr = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Paris" }));
+  const heure = dateFr.getHours();
+  const jour = dateFr.getDay(); // 0 = Dimanche, 1 = Lundi, 2 = Mardi... 6 = Samedi
 
-  if (heure < 14 && jour !== 0 && jour !== 1) {
-    return "ce soir 18h30";
-  }
-  if (jour === 0 || (jour === 6 && heure >= 14)) {
+  // 1. Réservé le samedi après-midi/soir, le dimanche toute la journée, ou le lundi
+  // (La boutique rouvre le mardi après-midi ou matin selon ses horaires)
+  if (jour === 0 || (jour === 6 && heure >= 14) || jour === 1) {
     return "mardi 14h00";
   }
-  if (jour === 1) {
-    return "mardi 18h30";
+
+  // 2. Réservé le matin (avant 14h) du mardi au samedi
+  if (heure < 14) {
+    return "ce soir 18h30";
   }
+
+  // 3. Réservé l'après-midi ou la nuit (après 14h ou tard le soir comme 23h15)
   return "demain 14h00";
 }
 
