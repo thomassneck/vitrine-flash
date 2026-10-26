@@ -16,6 +16,9 @@ function ContenuVitrine() {
   const [telephone, setTelephone] = useState(""); // <-- NOUVEAU : État pour le téléphone
   const [envoiEnCours, setEnvoiEnCours] = useState(false);
 
+  // 👉 AJOUTER ICI : État pour mémoriser et afficher le ticket de confirmation
+  const [ticketConfirmation, setTicketConfirmation] = useState(null);
+
   useEffect(() => {
     if (!slug) return;
 
@@ -52,7 +55,7 @@ function ContenuVitrine() {
     return false;
   };
 
-  const lancerReservation = async (canal) => {
+const lancerReservation = async (canal) => {
     if (!prenom.trim() || !telephone.trim()) {
       alert("Merci d'indiquer votre prénom et votre numéro de mobile 😊");
       return;
@@ -60,38 +63,59 @@ function ContenuVitrine() {
 
     setEnvoiEnCours(true);
 
-    const res = await fetch("/api/reserver", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        article_id: articleSelectionne.id,
-        prenom: prenom.trim(),
-        telephone: telephone.trim(), // <-- On envoie le 06 à Supabase
-        canal: canal,
-      }),
-    });
+    try {
+      const res = await fetch("/api/reserver", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          article_id: articleSelectionne.id,
+          prenom: prenom.trim(),
+          telephone: telephone.trim(),
+          canal: canal,
+        }),
+      });
 
-    const { codeResa, heureFin } = await res.json();
+      const { codeResa, heureFin } = await res.json();
 
-    setArticles((prev) =>
-      prev.map((a) =>
-        a.id === articleSelectionne.id
-          ? { ...a, statut: "pre_reserve", pre_reserve_jusqua: new Date(Date.now() + 15 * 60000).toISOString() }
-          : a
-      )
-    );
+      // Met à jour la grille pour griser l'article
+      setArticles((prev) =>
+        prev.map((a) =>
+          a.id === articleSelectionne.id
+            ? { ...a, statut: "confirme" }
+            : a
+        )
+      );
 
-    const telPro = boutique.telephone_pro;
-    const texte = `Bonjour ${boutique.nom} ! C'est ${prenom} (${telephone}). Je souhaite mettre de côté : "${articleSelectionne.titre}" (${articleSelectionne.taille} - ${articleSelectionne.prix}€) jusqu'à ${heureFin} (Réf: #${codeResa}).`;
-    const texteEncode = encodeURIComponent(texte);
+      // Préparation du message pré-rempli pour Marion
+      const telPro = boutique.telephone_pro;
+      const texte = `Bonjour ${boutique.nom} ! C'est ${prenom} (${telephone}). Je souhaite mettre de côté : "${articleSelectionne.titre}" (${articleSelectionne.taille} - ${articleSelectionne.prix}€) jusqu'à ${heureFin} (Réf: #${codeResa}).`;
+      const texteEncode = encodeURIComponent(texte);
 
-    setEnvoiEnCours(false);
-    setArticleSelectionne(null);
+      const lienAction =
+        canal === "whatsapp"
+          ? `https://wa.me/${telPro.replace("+", "")}?text=${texteEncode}`
+          : `sms:${telPro}?&body=${texteEncode}`;
 
-    if (canal === "whatsapp") {
-      window.location.href = `https://wa.me/${telPro.replace("+", "")}?text=${texteEncode}`;
-    } else {
-      window.location.href = `sms:${telPro}?&body=${texteEncode}`;
+      // 👉 AU LIEU DE FAIRE window.location.href IMMÉDIAT :
+      // On mémorise le ticket pour l'afficher à l'écran
+      setTicketConfirmation({
+        codeResa,
+        heureFin,
+        titre: articleSelectionne.titre,
+        taille: articleSelectionne.taille,
+        prix: articleSelectionne.prix,
+        lienAction,
+        canal,
+      });
+
+      // On ferme la fenêtre de saisie
+      setArticleSelectionne(null);
+      setPrenom("");
+      setTelephone("");
+    } catch (e) {
+      alert("Erreur lors de la réservation. Veuillez réessayer.");
+    } finally {
+      setEnvoiEnCours(false);
     }
   };
 
