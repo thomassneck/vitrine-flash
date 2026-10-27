@@ -54,14 +54,14 @@ function ContenuAdmin() {
   const [nouveauTel, setNouveauTel] = useState("");
   const [nouveauMdp, setNouveauMdp] = useState("");
 
-  // 1. Connexion automatique si le téléphone de Marion s'en souvient déjà
+  // Connexion automatique si le téléphone s'en souvient déjà
   useEffect(() => {
     if (slug && localStorage.getItem(`admin_auth_${slug}`) === "true") {
       setAutorise(true);
     }
   }, [slug]);
 
-  // États du formulaire d'ajout express (15 secondes)
+  // États du formulaire d'ajout express
   const [modaleAjout, setModaleAjout] = useState(false);
   const [titre, setTitre] = useState("");
   const [prix, setPrix] = useState("");
@@ -93,7 +93,7 @@ function ContenuAdmin() {
 
       setArticles(dataArticles || []);
 
-      // Charger les réservations associées aux articles de la boutique
+      // Charger les réservations associées
       if (dataArticles && dataArticles.length > 0) {
         const idsArticles = dataArticles.map((a) => a.id);
         const { data: dataResa } = await supabase
@@ -114,9 +114,9 @@ function ContenuAdmin() {
     chargerDonneesAdmin();
   }, [slug]);
 
-  // Sélection de la photo depuis l'appareil photo du smartphone
+  // Sélection de la photo
   const gererSelectionPhoto = (e) => {
-    const file = e.target.files[0];
+    const file = e.target.files?.[0];
     if (file) {
       setFichierPhoto(file);
       setApercuPhoto(URL.createObjectURL(file));
@@ -134,23 +134,19 @@ function ContenuAdmin() {
     setPublicationEnCours(true);
 
     try {
-      // Compression automatique de l'image
       const imageCompressee = await compresserPhoto(fichierPhoto);
       const cheminFichier = `${boutique.slug}/${imageCompressee.name}`;
 
-      // Envoi dans Supabase Storage (bucket 'photos-vitrine')
       const { error: uploadError } = await supabase.storage
         .from("photos-vitrine")
         .upload(cheminFichier, imageCompressee);
 
       if (uploadError) throw uploadError;
 
-      // Récupérer l'URL publique de la photo
       const { data: urlData } = supabase.storage
         .from("photos-vitrine")
         .getPublicUrl(cheminFichier);
 
-      // Enregistrer l'article dans la table 'articles'
       await supabase.from("articles").insert({
         boutique_id: boutique.id,
         titre: titre.trim(),
@@ -160,7 +156,6 @@ function ContenuAdmin() {
         statut: "disponible",
       });
 
-      // Réinitialiser le formulaire et rafraîchir
       setTitre("");
       setPrix("");
       setTaille("Unique");
@@ -175,7 +170,7 @@ function ContenuAdmin() {
     }
   };
 
-  // 2. Changer le statut d'un article en 1 clic (Confirmer, Vendu, ou Remettre en rayon)
+  // 2. Changer le statut d'un article
   const changerStatutArticle = async (articleId, nouveauStatut) => {
     await supabase
       .from("articles")
@@ -185,7 +180,6 @@ function ContenuAdmin() {
       })
       .eq("id", articleId);
 
-    // Si on remet en vitrine, on annule la réservation en cours
     if (nouveauStatut === "disponible") {
       await supabase
         .from("reservations")
@@ -196,11 +190,10 @@ function ContenuAdmin() {
     await chargerDonneesAdmin();
   };
 
-  // 3. Supprimer définitivement un article (et sa photo du stockage) s'il est retiré de la vitrine
+  // 3. Supprimer définitivement un article
   const supprimerArticle = async (article) => {
     if (!confirm(`Retirer "${article.titre}" de la vitrine en ligne ?`)) return;
 
-    // 1. Si la photo est stockée sur notre Supabase Storage, on la supprime pour libérer de l'espace
     if (article.photo_url && article.photo_url.includes("/photos-vitrine/")) {
       const cheminPhoto = article.photo_url.split("/photos-vitrine/")[1];
       if (cheminPhoto) {
@@ -208,14 +201,11 @@ function ContenuAdmin() {
       }
     }
 
-    // 2. On supprime l'article de la table (les réservations liées sont supprimées automatiquement grâce à ON DELETE CASCADE)
     await supabase.from("articles").delete().eq("id", article.id);
-
-    // 3. On rafraîchit la liste à l'écran
     await chargerDonneesAdmin();
   };
 
-// 4. Sauvegarder le nouveau numéro de téléphone et/ou le nouveau mot de passe
+  // 4. Sauvegarder les réglages
   const sauvegarderReglages = async (e) => {
     e.preventDefault();
     if (!nouveauTel.trim() || !nouveauMdp.trim()) {
@@ -223,7 +213,6 @@ function ContenuAdmin() {
       return;
     }
 
-    // Formatage automatique au format international +33 si elle tape 06... ou 07...
     let telFormate = nouveauTel.trim().replace(/\s+/g, "");
     if (telFormate.startsWith("0")) {
       telFormate = "+33" + telFormate.substring(1);
@@ -240,7 +229,7 @@ function ContenuAdmin() {
     if (error) {
       alert("Erreur lors de la mise à jour : " + error.message);
     } else {
-      alert("✅ Vos réglages (Téléphone & Code secret) ont bien été enregistrés !");
+      alert("✅ Vos réglages ont bien été enregistrés !");
       setModaleReglages(false);
       await chargerDonneesAdmin();
     }
@@ -254,7 +243,7 @@ function ContenuAdmin() {
     return <div className="min-h-screen flex items-center justify-center text-red-500">Boutique introuvable.</div>;
   }
 
-// ÉCRAN DE CONNEXION RAPIDE + MOT DE PASSE OUBLIÉ / CHANGER
+  // Écran de connexion
   if (!autorise) {
     const reinitialiserMotDePasse = async () => {
       const quatreDerniersPro = boutique.telephone_pro.slice(-4);
@@ -267,7 +256,6 @@ function ContenuAdmin() {
         return;
       }
 
-      // Mise à jour du nouveau mot de passe dans Supabase
       await supabase
         .from("boutiques")
         .update({ mot_de_passe_admin: nouveauMdpOubli.trim() })
@@ -298,7 +286,7 @@ function ContenuAdmin() {
                 placeholder="Code d'accès"
                 value={motDePasseSaisi}
                 onChange={(e) => setMotDePasseSaisi(e.target.value)}
-                className="w-full border border-stone-300 rounded-xl px-4 py-3 text-center text-stone-900 font-bold mb-4 focus:outline-none focus:ring-2 focus:ring-stone-900"
+                className="w-full border border-stone-300 rounded-xl px-4 py-3 text-center text-stone-900 font-bold mb-4 focus:outline-hidden focus:ring-2 focus:ring-stone-900"
               />
               <button
                 onClick={() => {
@@ -309,14 +297,14 @@ function ContenuAdmin() {
                     alert("Code incorrect");
                   }
                 }}
-                className="w-full bg-stone-900 text-white font-semibold py-3 rounded-xl shadow mb-3"
+                className="w-full bg-stone-900 text-white font-semibold py-3 rounded-xl shadow-xs mb-3 cursor-pointer"
               >
                 Ouvrir mon tableau de bord
               </button>
 
               <button
                 onClick={() => setModeOubli(true)}
-                className="text-xs text-stone-500 hover:text-stone-900 underline"
+                className="text-xs text-stone-500 hover:text-stone-900 underline cursor-pointer"
               >
                 Mot de passe oublié / Changer de code ?
               </button>
@@ -356,14 +344,14 @@ function ContenuAdmin() {
 
               <button
                 onClick={reinitialiserMotDePasse}
-                className="w-full bg-amber-500 text-stone-950 font-bold py-3 rounded-xl shadow mt-2"
+                className="w-full bg-amber-500 text-stone-950 font-bold py-3 rounded-xl shadow-xs mt-2 cursor-pointer"
               >
                 🔑 Enregistrer et me connecter
               </button>
 
               <button
                 onClick={() => setModeOubli(false)}
-                className="w-full text-center text-xs text-stone-400 hover:text-stone-700 pt-1"
+                className="w-full text-center text-xs text-stone-400 hover:text-stone-700 pt-1 cursor-pointer"
               >
                 ← Annuler
               </button>
@@ -387,7 +375,7 @@ function ContenuAdmin() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setModaleReglages(true)}
-            className="text-xs bg-stone-800 hover:bg-stone-700 text-amber-400 font-semibold px-3 py-2 rounded-xl border border-stone-700"
+            className="text-xs bg-stone-800 hover:bg-stone-700 text-amber-400 font-semibold px-3 py-2 rounded-xl border border-stone-700 cursor-pointer"
           >
             ⚙️ Réglages
           </button>
@@ -402,21 +390,18 @@ function ContenuAdmin() {
       </header>
 
       <main className="max-w-md mx-auto px-3 pt-4 space-y-3">
-        {/* BOUTON D'ACTION PRINCIPAL : AJOUTER UNE PÉPITE */}
         <button
           onClick={() => setModaleAjout(true)}
-          className="w-full bg-amber-500 hover:bg-amber-600 active:scale-98 transition text-stone-950 font-extrabold text-sm py-4 rounded-2xl shadow-md flex items-center justify-center gap-2"
+          className="w-full bg-amber-500 hover:bg-amber-600 active:scale-98 transition text-stone-950 font-extrabold text-sm py-4 rounded-2xl shadow-md flex items-center justify-center gap-2 cursor-pointer"
         >
           <span className="text-lg">📸</span> + Ajouter une pépite en vitrine (15s)
         </button>
 
-        {/* LISTE DES ARTICLES ET DES RÉSERVATIONS */}
         <h2 className="text-xs font-bold uppercase tracking-wider text-stone-500 pt-2 px-1">
           Articles actifs en vitrine ({articles.length})
         </h2>
 
         {articles.map((article) => {
-          // Chercher s'il y a une réservation active sur cet article
           const resa = reservations.find((r) => r.article_id === article.id);
           const estBloque =
             article.statut === "confirme" ||
@@ -425,7 +410,7 @@ function ContenuAdmin() {
           return (
             <div
               key={article.id}
-              className={`bg-white rounded-2xl p-3 shadow-sm border-2 ${
+              className={`bg-white rounded-2xl p-3 shadow-xs border-2 ${
                 estBloque ? "border-amber-400" : "border-transparent"
               }`}
             >
@@ -444,7 +429,6 @@ function ContenuAdmin() {
                   </div>
                   <h3 className="font-bold text-stone-900 text-sm mt-1">{article.titre}</h3>
 
-                  {/* Affichage des infos de la cliente si réservé */}
                   {estBloque && resa ? (
                     <div className="mt-2 bg-amber-50 border border-amber-200 rounded-xl p-2 text-xs">
                       <p className="font-bold text-amber-900">
@@ -467,11 +451,10 @@ function ContenuAdmin() {
                 </div>
               </div>
 
-              {/* BOUTONS DE GESTION EN 1 CLIC */}
               <div className="flex flex-wrap gap-2 mt-3 pt-2 border-t border-stone-100">
                 <button
                   onClick={() => changerStatutArticle(article.id, "vendu")}
-                  className="flex-1 bg-emerald-600 text-white font-bold text-xs py-2 px-2 rounded-xl"
+                  className="flex-1 bg-emerald-600 text-white font-bold text-xs py-2 px-2 rounded-xl cursor-pointer"
                 >
                   ✅ Vendu
                 </button>
@@ -479,7 +462,7 @@ function ContenuAdmin() {
                 {estBloque && (
                   <button
                     onClick={() => changerStatutArticle(article.id, "disponible")}
-                    className="flex-1 bg-stone-200 text-stone-700 font-semibold text-xs py-2 px-2 rounded-xl"
+                    className="flex-1 bg-stone-200 text-stone-700 font-semibold text-xs py-2 px-2 rounded-xl cursor-pointer"
                   >
                     🔄 Libérer
                   </button>
@@ -488,7 +471,7 @@ function ContenuAdmin() {
                 <button
                   onClick={() => supprimerArticle(article)}
                   title="Retirer de la vitrine sans marquer vendu"
-                  className="bg-red-50 hover:bg-red-100 text-red-600 font-semibold text-xs py-2 px-3 rounded-xl"
+                  className="bg-red-50 hover:bg-red-100 text-red-600 font-semibold text-xs py-2 px-3 rounded-xl cursor-pointer"
                 >
                   🗑️ Retirer
                 </button>
@@ -498,7 +481,7 @@ function ContenuAdmin() {
         })}
       </main>
 
-      {/* MODALE D'AJOUT DE PHOTO EXPRESS */}
+      {/* MODALE D'AJOUT AVEC LE CHOIX PHOTO OU GALERIE */}
       {modaleAjout && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4">
           <form
@@ -510,38 +493,59 @@ function ContenuAdmin() {
               <button
                 type="button"
                 onClick={() => setModaleAjout(false)}
-                className="text-stone-400 font-bold text-xl px-2"
+                className="text-stone-400 font-bold text-xl px-2 cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            {/* Bouton Appareil Photo */}
+            {/* Aperçu et sélection de l'image */}
             <div>
-              <label className="block w-full cursor-pointer">
-                <div className="border-2 border-dashed border-stone-300 rounded-2xl p-4 text-center hover:bg-stone-50">
-                  {apercuPhoto ? (
+              <div className="border-2 border-dashed border-stone-300 rounded-2xl p-3 text-center bg-stone-50">
+                {apercuPhoto ? (
+                  <div className="space-y-2">
                     <img
                       src={apercuPhoto}
                       alt="Aperçu"
-                      className="w-32 h-40 object-cover mx-auto rounded-xl shadow"
+                      className="w-32 h-40 object-cover mx-auto rounded-xl shadow-xs"
                     />
-                  ) : (
-                    <div className="py-6">
-                      <span className="text-3xl block mb-1">📷</span>
-                      <span className="text-xs font-bold text-stone-700">
-                        Prendre une photo ou choisir dans la galerie
-                      </span>
-                    </div>
-                  )}
+                    <p className="text-[11px] text-stone-500 font-medium">Photo sélectionnée</p>
+                  </div>
+                ) : (
+                  <div className="py-4">
+                    <span className="text-3xl block mb-1">📷</span>
+                    <p className="text-xs font-semibold text-stone-600">
+                      Ajoutez une photo claire du vêtement
+                    </p>
+                  </div>
+                )}
+
+                {/* Les 2 boutons côte à côte */}
+                <div className="grid grid-cols-2 gap-2 mt-3">
+                  <label className="cursor-pointer bg-stone-900 hover:bg-stone-800 text-white text-xs font-semibold py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 active:scale-95 transition">
+                    <span>📸</span> Prendre photo
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      onClick={(e) => { e.target.value = null; }}
+                      onChange={gererSelectionPhoto}
+                      className="hidden"
+                    />
+                  </label>
+
+                  <label className="cursor-pointer bg-white border border-stone-300 hover:bg-stone-100 text-stone-700 text-xs font-semibold py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 active:scale-95 transition">
+                    <span>🖼️</span> Galerie
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onClick={(e) => { e.target.value = null; }}
+                      onChange={gererSelectionPhoto}
+                      className="hidden"
+                    />
+                  </label>
                 </div>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={gererSelectionPhoto}
-                  className="hidden"
-                />
-              </label>
+              </div>
             </div>
 
             {/* Titre */}
@@ -559,7 +563,7 @@ function ContenuAdmin() {
               />
             </div>
 
-            {/* Prix et Taille sur la même ligne */}
+            {/* Prix et Taille */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-stone-700 mb-1">
@@ -594,7 +598,7 @@ function ContenuAdmin() {
             <button
               type="submit"
               disabled={publicationEnCours}
-              className="w-full bg-stone-900 text-white font-bold text-sm py-3.5 rounded-xl shadow-lg"
+              className="w-full bg-stone-900 text-white font-bold text-sm py-3.5 rounded-xl shadow-lg cursor-pointer disabled:opacity-50"
             >
               {publicationEnCours ? "Compression et mise en ligne..." : "✨ Publier dans ma vitrine"}
             </button>
@@ -602,7 +606,7 @@ function ContenuAdmin() {
         </div>
       )}
 
-      {/* MODALE DES RÉGLAGES (CHANGER TÉLÉPHONE & MOT DE PASSE) */}
+      {/* MODALE DES RÉGLAGES */}
       {modaleReglages && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4">
           <form
@@ -621,13 +625,12 @@ function ContenuAdmin() {
               <button
                 type="button"
                 onClick={() => setModaleReglages(false)}
-                className="text-stone-400 font-bold text-xl px-2"
+                className="text-stone-400 font-bold text-xl px-2 cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            {/* Numéro de téléphone qui reçoit les SMS / WhatsApp */}
             <div>
               <label className="block text-xs font-bold text-stone-700 mb-1">
                 📱 Numéro qui reçoit les réservations (SMS & WhatsApp) :
@@ -641,11 +644,10 @@ function ContenuAdmin() {
                 className="w-full border border-stone-300 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-stone-900"
               />
               <p className="text-[11px] text-stone-400 mt-1">
-                Astuce : Si vous tapez 06..., il sera automatiquement converti en +336... pour WhatsApp.
+                Astuce : Les numéros commençant par 06 ou 07 sont convertis au format international +33.
               </p>
             </div>
 
-            {/* Nouveau code secret vendeuse */}
             <div>
               <label className="block text-xs font-bold text-stone-700 mb-1">
                 🔑 Code secret vendeuse (Mot de passe Admin) :
@@ -663,7 +665,7 @@ function ContenuAdmin() {
             <div className="pt-2 space-y-2">
               <button
                 type="submit"
-                className="w-full bg-stone-900 text-white font-bold text-sm py-3.5 rounded-xl shadow-lg"
+                className="w-full bg-stone-900 text-white font-bold text-sm py-3.5 rounded-xl shadow-lg cursor-pointer"
               >
                 💾 Enregistrer les modifications
               </button>
@@ -675,7 +677,7 @@ function ContenuAdmin() {
                   setAutorise(false);
                   setModaleReglages(false);
                 }}
-                className="w-full bg-red-50 text-red-600 font-semibold text-xs py-2.5 rounded-xl"
+                className="w-full bg-red-50 text-red-600 font-semibold text-xs py-2.5 rounded-xl cursor-pointer"
               >
                 🔒 Déconnecter cet appareil
               </button>
@@ -694,5 +696,3 @@ export default function AdminBoutique() {
     </Suspense>
   );
 }
-
-
