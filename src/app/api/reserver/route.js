@@ -1,95 +1,59 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import { Resend } from 'resend';
 
-function calculerHeureMax() {
-  // Récupération de l'heure et du jour dans le fuseau horaire de Paris
-  const dateFr = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Paris" }));
-  const heure = dateFr.getHours();
-  const jour = dateFr.getDay(); // 0 = Dimanche, 1 = Lundi, 2 = Mardi... 6 = Samedi
-
-  // 1. Réservé le samedi après-midi/soir, le dimanche toute la journée, ou le lundi
-  // (La boutique rouvre le mardi après-midi ou matin selon ses horaires)
-  if (jour === 0 || (jour === 6 && heure >= 14) || jour === 1) {
-    return "mardi 14h00";
-  }
-
-  // 2. Réservé le matin (avant 14h) du mardi au samedi
-  if (heure < 14) {
-    return "ce soir 18h30";
-  }
-
-  // 3. Réservé l'après-midi ou la nuit (après 14h ou tard le soir comme 23h15)
-  return "demain 14h00";
-}
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function POST(request) {
   try {
     const { article_id, prenom, telephone, canal } = await request.json();
 
     const codeResa = 'BM-' + Math.floor(100 + Math.random() * 900);
-    const heureFin = calculerHeureMax();
 
-    // 1. Mise à jour de l'article (on utilise 'confirme' ou 'pre_reserve' selon ton choix)
+    // 1. Bloquer l'article
     const { data: article, error: updateError } = await supabase
       .from('articles')
-      .update({ 
-        statut: 'confirme' 
-      })
+      .update({ statut: 'confirme' })
       .eq('id', article_id)
       .select('titre, taille, prix')
       .single();
 
     if (updateError) {
-      console.error("Erreur update article Supabase:", updateError);
       return NextResponse.json({ error: updateError.message }, { status: 400 });
     }
 
-    // 2. Enregistrement de la réservation
-    const { error: insertError } = await supabase.from('reservations').insert({
+    // 2. Enregistrer la réservation
+    await supabase.from('reservations').insert({
       code_resa: codeResa,
       article_id,
       prenom_cliente: prenom,
       telephone_cliente: telephone,
-      canal,
-      statut: 'attente_sms'
+      canal: canal || 'web',
+      statut: 'validee_cabine'
     });
 
-    if (insertError) {
-      console.error("Erreur insert reservation Supabase:", insertError);
+    // 3. ENVOI DU MAIL D'ALERTE À LA BOUTIQUE
+    if (process.env.RESEND_API_KEY && process.env.EMAIL_BOUTIQUE) {
+      await resend.emails.send({
+        from: 'Vitrine Flash <onboarding@resend.dev>',
+        to: process.env.EMAIL_BOUTIQUE,
+        subject: `🚨 Nouvelle résa : ${article.titre} pour ${prenom}`,
+        html: `
+          <h3>Nouvelle pièce mise de côté !</h3>
+          <p><strong>Article :</strong> ${article.titre} (${article.taille}) - ${article.prix} €</p>
+          <p><strong>Cliente :</strong> ${prenom}</p>
+          <p><strong>Téléphone :</strong> <a href="tel:${telephone}">${telephone}</a></p>
+          <p><strong>Référence :</strong> #${codeResa}</p>
+          <hr />
+          <p>Mettez la pièce de côté en cabine ou derrière la caisse.</p>
+        `,
+      }).catch((err) => console.error("Erreur envoi mail:", err));
     }
 
-    // 3. Notification Telegram en arrière-plan (si configurée)
-    const botToken = process.env.TELEGRAM_BOT_TOKEN;
-    const chatId = process.env.TELEGRAM_CHAT_ID;
-
-    if (botToken && chatId && article) {
-      const messageAlerte = 
-        `🛍️ *NOUVELLE RÉSERVATION !*\n\n` +
-        `👗 *Article :* ${article.titre} (${article.taille}) - *${article.prix} €*\n` +
-        `👤 *Cliente :* ${prenom}\n` +
-        `📞 *Téléphone :* ${telephone}\n` +
-        `🔑 *Réf :* #${codeResa} (jusqu'à ${heureFin})`;
-
-      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: messageAlerte,
-          parse_mode: 'Markdown',
-        }),
-      }).catch((err) => console.error("Erreur Telegram:", err));
-    }
-
-    // 4. Renvoi obligatoire des clés attendues par le front-end
-    return NextResponse.json({ 
-      succes: true,
-      codeResa, 
-      heureFin 
-    });
+    return NextResponse.json({ succes: true, codeResa, heureFin: '18h30' });
 
   } catch (err) {
-    console.error("Erreur API reserver:", err);
+    console.error("Erreur API:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
