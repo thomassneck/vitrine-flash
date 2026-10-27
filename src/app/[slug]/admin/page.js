@@ -70,6 +70,15 @@ function ContenuAdmin() {
   const [apercuPhoto, setApercuPhoto] = useState(null);
   const [publicationEnCours, setPublicationEnCours] = useState(false);
 
+  // NOUVEAU : États pour la modale de modification d'article
+  const [articleEnModif, setArticleEnModif] = useState(null);
+  const [modifTitre, setModifTitre] = useState("");
+  const [modifPrix, setModifPrix] = useState("");
+  const [modifTaille, setModifTaille] = useState("");
+  const [modifFichierPhoto, setModifFichierPhoto] = useState(null);
+  const [modifApercuPhoto, setModifApercuPhoto] = useState(null);
+  const [sauvegardeEnCours, setSauvegardeEnCours] = useState(false);
+
   // Chargement des données
   const chargerDonneesAdmin = async () => {
     const { data: dataBoutique } = await supabase
@@ -114,7 +123,7 @@ function ContenuAdmin() {
     chargerDonneesAdmin();
   }, [slug]);
 
-  // Sélection de la photo
+  // Sélection de la photo pour l'ajout
   const gererSelectionPhoto = (e) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -203,6 +212,76 @@ function ContenuAdmin() {
 
     await supabase.from("articles").delete().eq("id", article.id);
     await chargerDonneesAdmin();
+  };
+
+  // NOUVEAU : Préremplir et ouvrir la modale de modification
+  const ouvrirModaleModif = (article) => {
+    setArticleEnModif(article);
+    setModifTitre(article.titre);
+    setModifPrix(article.prix.toString());
+    setModifTaille(article.taille);
+    setModifFichierPhoto(null);
+    setModifApercuPhoto(article.photo_url);
+  };
+
+  // NOUVEAU : Sauvegarder la modification dans Supabase
+  const enregistrerModification = async (e) => {
+    e.preventDefault();
+    if (!modifTitre.trim() || !modifPrix) {
+      alert("Le titre et le prix sont obligatoires.");
+      return;
+    }
+
+    setSauvegardeEnCours(true);
+
+    try {
+      let nouvelleUrlPhoto = articleEnModif.photo_url;
+
+      // Si une nouvelle photo a été choisie
+      if (modifFichierPhoto) {
+        const imageCompressee = await compresserPhoto(modifFichierPhoto);
+        const cheminFichier = `${boutique.slug}/${imageCompressee.name}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("photos-vitrine")
+          .upload(cheminFichier, imageCompressee);
+
+        if (uploadError) throw uploadError;
+
+        const { data: urlData } = supabase.storage
+          .from("photos-vitrine")
+          .getPublicUrl(cheminFichier);
+
+        nouvelleUrlPhoto = urlData.publicUrl;
+
+        // Supprimer l'ancienne photo du stockage pour ne pas encombrer Supabase
+        if (articleEnModif.photo_url && articleEnModif.photo_url.includes("/photos-vitrine/")) {
+          const ancienChemin = articleEnModif.photo_url.split("/photos-vitrine/")[1];
+          if (ancienChemin) {
+            await supabase.storage.from("photos-vitrine").remove([ancienChemin]);
+          }
+        }
+      }
+
+      const { error: updateError } = await supabase
+        .from("articles")
+        .update({
+          titre: modifTitre.trim(),
+          taille: modifTaille.trim(),
+          prix: parseFloat(modifPrix),
+          photo_url: nouvelleUrlPhoto,
+        })
+        .eq("id", articleEnModif.id);
+
+      if (updateError) throw updateError;
+
+      setArticleEnModif(null);
+      await chargerDonneesAdmin();
+    } catch (err) {
+      alert("Erreur lors de la modification : " + err.message);
+    } finally {
+      setSauvegardeEnCours(false);
+    }
   };
 
   // 4. Sauvegarder les réglages
@@ -394,7 +473,7 @@ function ContenuAdmin() {
           onClick={() => setModaleAjout(true)}
           className="w-full bg-amber-500 hover:bg-amber-600 active:scale-98 transition text-stone-950 font-extrabold text-sm py-4 rounded-2xl shadow-md flex items-center justify-center gap-2 cursor-pointer"
         >
-          <span className="text-lg">📸</span> + Ajouter une pépite en vitrine (15s)
+          <span className="text-lg">📸</span> + Ajouter une pépite en vitrine
         </button>
 
         <h2 className="text-xs font-bold uppercase tracking-wider text-stone-500 pt-2 px-1">
@@ -451,10 +530,11 @@ function ContenuAdmin() {
                 </div>
               </div>
 
+              {/* BOUTONS D'ACTION : Vendu / Libérer / Modifier / Retirer */}
               <div className="flex flex-wrap gap-2 mt-3 pt-2 border-t border-stone-100">
                 <button
                   onClick={() => changerStatutArticle(article.id, "vendu")}
-                  className="flex-1 bg-emerald-600 text-white font-bold text-xs py-2 px-2 rounded-xl cursor-pointer"
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 px-2 rounded-xl cursor-pointer"
                 >
                   ✅ Vendu
                 </button>
@@ -462,11 +542,19 @@ function ContenuAdmin() {
                 {estBloque && (
                   <button
                     onClick={() => changerStatutArticle(article.id, "disponible")}
-                    className="flex-1 bg-stone-200 text-stone-700 font-semibold text-xs py-2 px-2 rounded-xl cursor-pointer"
+                    className="flex-1 bg-stone-200 hover:bg-stone-300 text-stone-700 font-semibold text-xs py-2 px-2 rounded-xl cursor-pointer"
                   >
                     🔄 Libérer
                   </button>
                 )}
+
+                <button
+                  onClick={() => ouvrirModaleModif(article)}
+                  className="bg-amber-100 hover:bg-amber-200 text-amber-900 font-semibold text-xs py-2 px-3 rounded-xl cursor-pointer"
+                  title="Modifier le titre, prix ou taille"
+                >
+                  ✏️ Modifier
+                </button>
 
                 <button
                   onClick={() => supprimerArticle(article)}
@@ -598,10 +686,140 @@ function ContenuAdmin() {
             <button
               type="submit"
               disabled={publicationEnCours}
-              className="w-full bg-stone-900 text-white font-bold text-sm py-3.5 rounded-xl shadow-lg cursor-pointer disabled:opacity-50"
+              className="w-full bg-stone-900 hover:bg-stone-800 text-white font-bold text-sm py-3.5 rounded-xl shadow-lg cursor-pointer disabled:opacity-50"
             >
               {publicationEnCours ? "Compression et mise en ligne..." : "✨ Publier dans ma vitrine"}
             </button>
+          </form>
+        </div>
+      )}
+
+      {/* NOUVEAU : MODALE DE MODIFICATION D'ARTICLE */}
+      {articleEnModif && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <form
+            onSubmit={enregistrerModification}
+            className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto"
+          >
+            <div className="flex justify-between items-center border-b border-stone-100 pb-3">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600">
+                  Correction
+                </span>
+                <h3 className="text-lg font-bold text-stone-900">
+                  Modifier l'article
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setArticleEnModif(null)}
+                className="text-stone-400 font-bold text-xl px-2 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Aperçu et remplacement éventuel de la photo */}
+            <div>
+              <div className="border border-stone-200 rounded-2xl p-3 text-center bg-stone-50">
+                <img
+                  src={modifApercuPhoto}
+                  alt="Aperçu"
+                  className="w-24 h-32 object-cover mx-auto rounded-xl shadow-xs mb-2"
+                />
+                <p className="text-[11px] text-stone-500 mb-2">Changer la photo (optionnel) :</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="cursor-pointer bg-stone-900 hover:bg-stone-800 text-white text-[11px] font-semibold py-2 px-2 rounded-xl flex items-center justify-center gap-1 active:scale-95 transition">
+                    <span>📸</span> Photo
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      onClick={(e) => { e.target.value = null; }}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setModifFichierPhoto(file);
+                          setModifApercuPhoto(URL.createObjectURL(file));
+                        }
+                      }}
+                      className="hidden"
+                    />
+                  </label>
+
+                  <label className="cursor-pointer bg-white border border-stone-300 hover:bg-stone-100 text-stone-700 text-[11px] font-semibold py-2 px-2 rounded-xl flex items-center justify-center gap-1 active:scale-95 transition">
+                    <span>🖼️</span> Galerie
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onClick={(e) => { e.target.value = null; }}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setModifFichierPhoto(file);
+                          setModifApercuPhoto(URL.createObjectURL(file));
+                        }
+                      }}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* Titre */}
+            <div>
+              <label className="block text-xs font-semibold text-stone-700 mb-1">
+                Nom de la pièce :
+              </label>
+              <input
+                type="text"
+                value={modifTitre}
+                onChange={(e) => setModifTitre(e.target.value)}
+                required
+                className="w-full border border-stone-300 rounded-xl px-3.5 py-2.5 text-sm text-stone-900 focus:outline-hidden focus:ring-2 focus:ring-stone-900"
+              />
+            </div>
+
+            {/* Prix et Taille */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">
+                  Prix (€) :
+                </label>
+                <input
+                  type="number"
+                  step="0.5"
+                  value={modifPrix}
+                  onChange={(e) => setModifPrix(e.target.value)}
+                  required
+                  className="w-full border border-stone-300 rounded-xl px-3.5 py-2.5 text-sm text-stone-900 focus:outline-hidden focus:ring-2 focus:ring-stone-900"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">
+                  Taille :
+                </label>
+                <input
+                  type="text"
+                  value={modifTaille}
+                  onChange={(e) => setModifTaille(e.target.value)}
+                  required
+                  className="w-full border border-stone-300 rounded-xl px-3.5 py-2.5 text-sm text-stone-900 focus:outline-hidden focus:ring-2 focus:ring-stone-900"
+                />
+              </div>
+            </div>
+
+            <div className="pt-2">
+              <button
+                type="submit"
+                disabled={sauvegardeEnCours}
+                className="w-full bg-stone-900 hover:bg-stone-800 text-white font-bold text-sm py-3.5 rounded-xl shadow-lg cursor-pointer disabled:opacity-50"
+              >
+                {sauvegardeEnCours ? "Enregistrement..." : "💾 Mettre à jour l'article"}
+              </button>
+            </div>
           </form>
         </div>
       )}
