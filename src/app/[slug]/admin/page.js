@@ -55,6 +55,9 @@ function ContenuAdmin() {
   const [nouveauMdp, setNouveauMdp] = useState("");
   const [nouvelEmail, setNouvelEmail] = useState("");
 
+  // Modale pour le Bilan / Clôture du soir
+  const [modaleCloture, setModaleCloture] = useState(false);
+
   // Connexion automatique si le téléphone s'en souvient déjà
   useEffect(() => {
     if (slug && localStorage.getItem(`admin_auth_${slug}`) === "true") {
@@ -134,7 +137,7 @@ function ContenuAdmin() {
     }
   };
 
-  // 1. Publier un nouvel article en vitrine
+  // 1. Publier une nouvelle pépite en vitrine
   const ajouterArticle = async (e) => {
     e.preventDefault();
     if (!fichierPhoto || !titre || !prix) {
@@ -198,6 +201,27 @@ function ContenuAdmin() {
         .eq("article_id", articleId);
     }
 
+    await chargerDonneesAdmin();
+  };
+
+  // Clôture du soir : Remettre tous les articles non retirés en rayon en un seul clic
+  const libererTousLesArticles = async (articlesARemettre) => {
+    if (!articlesARemettre || articlesARemettre.length === 0) return;
+    if (!confirm(`Remettre ces ${articlesARemettre.length} pièce(s) en rayon et sur la vitrine ?`)) return;
+
+    const ids = articlesARemettre.map((a) => a.id);
+
+    await supabase
+      .from("articles")
+      .update({ statut: "disponible", pre_reserve_jusqua: null })
+      .in("id", ids);
+
+    await supabase
+      .from("reservations")
+      .update({ statut: "annulee" })
+      .in("article_id", ids);
+
+    setModaleCloture(false);
     await chargerDonneesAdmin();
   };
 
@@ -314,6 +338,13 @@ function ContenuAdmin() {
       await chargerDonneesAdmin();
     }
   };
+
+  // Articles actuellement réservés ou bloqués
+  const articlesNonRetires = articles.filter(
+    (a) =>
+      a.statut === "confirme" ||
+      (a.statut === "pre_reserve" && new Date(a.pre_reserve_jusqua) > new Date())
+  );
 
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center text-stone-500">Chargement de l'espace vendeuse...</div>;
@@ -452,17 +483,34 @@ function ContenuAdmin() {
           </span>
           <h1 className="text-lg font-bold">{boutique.nom}</h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
+          {/* BOUTON CLÔTURE DU SOIR / BILAN */}
+          <button
+            onClick={() => setModaleCloture(true)}
+            className="text-xs bg-stone-800 hover:bg-stone-700 text-amber-300 font-semibold px-2.5 py-2 rounded-xl border border-stone-700 cursor-pointer flex items-center gap-1"
+            title="Bilan du soir : pièces à remettre en rayon"
+          >
+            <span>🌙</span> Bilan
+            {articlesNonRetires.length > 0 && (
+              <span className="bg-amber-500 text-stone-950 text-[10px] font-extrabold px-1.5 py-0.2 rounded-full">
+                {articlesNonRetires.length}
+              </span>
+            )}
+          </button>
+
+          {/* BOUTON RÉGLAGES */}
           <button
             onClick={() => setModaleReglages(true)}
-            className="text-xs bg-stone-800 hover:bg-stone-700 text-amber-400 font-semibold px-3 py-2 rounded-xl border border-stone-700 cursor-pointer"
+            className="text-xs bg-stone-800 hover:bg-stone-700 text-amber-400 font-semibold px-2.5 py-2 rounded-xl border border-stone-700 cursor-pointer"
           >
             ⚙️ Réglages
           </button>
+
+          {/* LIEN VITRINE */}
           <a
             href={`/${boutique.slug}`}
             target="_blank"
-            className="text-xs bg-stone-800 hover:bg-stone-700 text-stone-200 px-3 py-2 rounded-xl border border-stone-700"
+            className="text-xs bg-stone-800 hover:bg-stone-700 text-stone-200 px-2.5 py-2 rounded-xl border border-stone-700"
           >
             👁️ Vitrine
           </a>
@@ -474,7 +522,7 @@ function ContenuAdmin() {
           onClick={() => setModaleAjout(true)}
           className="w-full bg-amber-500 hover:bg-amber-600 active:scale-98 transition text-stone-950 font-extrabold text-sm py-4 rounded-2xl shadow-md flex items-center justify-center gap-2 cursor-pointer"
         >
-          <span className="text-lg">📸</span> + Ajouter un article en vitrine
+          <span className="text-lg">📸</span> + Ajouter une pépite en vitrine (15s)
         </button>
 
         <h2 className="text-xs font-bold uppercase tracking-wider text-stone-500 pt-2 px-1">
@@ -531,7 +579,7 @@ function ContenuAdmin() {
                 </div>
               </div>
 
-              {/* BOUTONS D'ACTION */}
+              {/* BOUTONS D'ACTION : Vendu / Libérer / Modifier / Retirer */}
               <div className="flex flex-wrap gap-2 mt-3 pt-2 border-t border-stone-100">
                 <button
                   onClick={() => changerStatutArticle(article.id, "vendu")}
@@ -569,6 +617,81 @@ function ContenuAdmin() {
           );
         })}
       </main>
+
+      {/* MODALE BILAN DU SOIR / CLÔTURE (REMISE EN RAYON GROUPÉE) */}
+      {modaleCloture && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b border-stone-100 pb-3">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600">
+                  Fin de journée
+                </span>
+                <h3 className="text-lg font-bold text-stone-900">
+                  🌙 Bilan des pièces en attente
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModaleCloture(false)}
+                className="text-stone-400 font-bold text-xl px-2 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {articlesNonRetires.length === 0 ? (
+              <div className="py-8 text-center space-y-2">
+                <span className="text-4xl block">🎉</span>
+                <p className="text-sm font-bold text-stone-900">Tout est en ordre !</p>
+                <p className="text-xs text-stone-500">
+                  Aucun article n'est bloqué derrière la caisse. Toutes les pièces réservées ont été retirées ou libérées.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-xs text-stone-600 leading-relaxed">
+                  Ces <strong>{articlesNonRetires.length} pièce(s)</strong> sont restées de côté. Replacez-les sur cintre avant de fermer :
+                </p>
+
+                <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                  {articlesNonRetires.map((art) => {
+                    const resa = reservations.find((r) => r.article_id === art.id);
+                    return (
+                      <div
+                        key={art.id}
+                        className="bg-stone-50 border border-stone-200 rounded-xl p-3 flex items-center justify-between gap-2"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-stone-900 truncate">
+                            {art.titre} <span className="font-normal text-stone-500">({art.taille} • {art.prix} €)</span>
+                          </p>
+                          <p className="text-[11px] text-amber-800 font-medium truncate mt-0.5">
+                            👤 {resa ? `${resa.prenom_cliente} (${resa.telephone_cliente || "Sans tél"})` : "Réservation active"}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => changerStatutArticle(art.id, "disponible")}
+                          className="bg-stone-900 hover:bg-stone-800 text-white text-[11px] font-semibold py-1.5 px-2.5 rounded-lg shrink-0 cursor-pointer"
+                        >
+                          En rayon
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <button
+                  onClick={() => libererTousLesArticles(articlesNonRetires)}
+                  className="w-full bg-amber-500 hover:bg-amber-600 text-stone-950 font-extrabold text-xs py-3 rounded-xl shadow-xs transition active:scale-98 cursor-pointer mt-2"
+                >
+                  ✨ Tout remettre en vitrine ({articlesNonRetires.length} pièce{articlesNonRetires.length > 1 ? "s" : ""})
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* MODALE D'AJOUT AVEC LE CHOIX PHOTO OU GALERIE */}
       {modaleAjout && (
@@ -818,7 +941,7 @@ function ContenuAdmin() {
         </div>
       )}
 
-      {/* MODALE DES RÉGLAGES (AVEC EMAIL, TÉLÉPHONE & CODE) */}
+      {/* MODALE DES RÉGLAGES */}
       {modaleReglages && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4">
           <form
@@ -843,7 +966,6 @@ function ContenuAdmin() {
               </button>
             </div>
 
-            {/* Téléphone */}
             <div>
               <label className="block text-xs font-bold text-stone-700 mb-1">
                 📱 Numéro de réception (SMS & WhatsApp) :
@@ -861,7 +983,6 @@ function ContenuAdmin() {
               </p>
             </div>
 
-            {/* Email de réception des réservations */}
             <div>
               <label className="block text-xs font-bold text-stone-700 mb-1">
                 ✉️ Email de réception des alertes :
@@ -878,7 +999,6 @@ function ContenuAdmin() {
               </p>
             </div>
 
-            {/* Mot de passe vendeuse */}
             <div>
               <label className="block text-xs font-bold text-stone-700 mb-1">
                 🔑 Code secret vendeuse (Mot de passe Admin) :

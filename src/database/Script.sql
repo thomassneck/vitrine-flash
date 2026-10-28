@@ -97,8 +97,3 @@ CREATE POLICY "Acces public suppression photos" ON storage.objects FOR DELETE US
 CREATE POLICY "Autoriser modification reglages boutique" ON boutiques FOR UPDATE USING (true) WITH CHECK (true);
 CREATE POLICY "Acces public upload photos" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'photos-vitrine');
 CREATE POLICY "Acces public lecture photos" ON storage.objects FOR SELECT USING (bucket_id = 'photos-vitrine');
-
--- 2. Renseigne l'e-mail pour votre première boutique (Bisou Magique)
-UPDATE boutiques 
-SET email = 'contact@bisou-magique.fr' 
-WHERE slug = 'bisou-magique';
