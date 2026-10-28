@@ -141,9 +141,6 @@ function ContenuVitrine() {
               {boutique.nom}
             </h1>
           </div>
-          <span className="text-xs bg-amber-50 text-amber-800 font-bold px-2.5 py-1 rounded-full border border-amber-200">
-            Pièces uniques ✨
-          </span>
         </div>
       </header>
 
