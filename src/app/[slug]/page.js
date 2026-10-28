@@ -10,53 +10,47 @@ function ContenuVitrine() {
   const [articles, setArticles] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Modale de saisie
+  // Modale de zoom/détail de l'article
+  const [articleApercu, setArticleApercu] = useState(null);
+
+  // Modale du formulaire de réservation
   const [articleSelectionne, setArticleSelectionne] = useState(null);
   const [prenom, setPrenom] = useState("");
   const [telephone, setTelephone] = useState("");
   const [envoiEnCours, setEnvoiEnCours] = useState(false);
 
-  // Modale de succès (Ticket de confirmation)
+  // Modale du ticket de réservation
   const [ticketConfirmation, setTicketConfirmation] = useState(null);
+
+  // Chargement des données
+  const chargerBoutiqueEtArticles = async () => {
+    const { data: dataBoutique } = await supabase
+      .from("boutiques")
+      .select("*")
+      .eq("slug", slug)
+      .maybeSingle();
+
+    if (dataBoutique) {
+      setBoutique(dataBoutique);
+
+      const { data: dataArticles } = await supabase
+        .from("articles")
+        .select("*")
+        .eq("boutique_id", dataBoutique.id)
+        .neq("statut", "vendu")
+        .order("created_at", { ascending: false });
+
+      setArticles(dataArticles || []);
+    }
+    setLoading(false);
+  };
 
   useEffect(() => {
     if (!slug) return;
-
-    async function chargerVitrine() {
-      const { data: dataBoutique } = await supabase
-        .from("boutiques")
-        .select("*")
-        .eq("slug", slug)
-        .maybeSingle();
-
-      if (dataBoutique) {
-        setBoutique(dataBoutique);
-
-        const { data: dataArticles } = await supabase
-          .from("articles")
-          .select("*")
-          .eq("boutique_id", dataBoutique.id)
-          .neq("statut", "vendu")
-          .order("created_at", { ascending: false });
-
-        setArticles(dataArticles || []);
-      }
-      setLoading(false);
-    }
-
-    chargerVitrine();
+    chargerBoutiqueEtArticles();
   }, [slug]);
 
-  // Vérifie si l'article est indisponible
-  const estArticleReserve = (article) => {
-    if (article.statut === "confirme") return true;
-    if (article.statut === "pre_reserve" && article.pre_reserve_jusqua) {
-      return new Date(article.pre_reserve_jusqua) > new Date();
-    }
-    return false;
-  };
-
-  // Envoi de la réservation vers le serveur
+  // Envoi de la réservation
   const lancerReservation = async (canal) => {
     if (!prenom.trim() || !telephone.trim()) {
       alert("Merci d'indiquer votre prénom et votre numéro de mobile 😊");
@@ -78,25 +72,19 @@ function ContenuVitrine() {
       });
 
       const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Erreur serveur");
-      }
+      if (!res.ok) throw new Error(data.error || "Erreur serveur");
 
       const { codeResa, heureFin } = data;
 
-      // Grise immédiatement l'article sur la grille
+      // Met à jour la grille pour marquer l'article comme réservé
       setArticles((prev) =>
         prev.map((a) =>
-          a.id === articleSelectionne.id
-            ? { ...a, statut: "confirme" }
-            : a
+          a.id === articleSelectionne.id ? { ...a, statut: "confirme" } : a
         )
       );
 
-      // Préparation du message SMS / WhatsApp
-      const telPro = boutique.telephone_pro;
-      const texte = `Bonjour ${boutique.nom} ! C'est ${prenom.trim()} (${telephone.trim()}). Je souhaite mettre de côté : "${articleSelectionne.titre}" (${articleSelectionne.taille} - ${articleSelectionne.prix}€) jusqu'à ${heureFin} (Réf: #${codeResa}).`;
+      const telPro = boutique.telephone_pro || "";
+      const texte = `Bonjour ${boutique.nom} ! C'est ${prenom} (${telephone}). Je souhaite mettre de côté : "${articleSelectionne.titre}" (${articleSelectionne.taille} - ${articleSelectionne.prix} €) jusqu'à ${heureFin} (Réf: #${codeResa}).`;
       const texteEncode = encodeURIComponent(texte);
 
       const lienAction =
@@ -104,7 +92,6 @@ function ContenuVitrine() {
           ? `https://wa.me/${telPro.replace("+", "")}?text=${texteEncode}`
           : `sms:${telPro}?&body=${texteEncode}`;
 
-      // Affiche le ticket de confirmation à l'écran
       setTicketConfirmation({
         codeResa,
         heureFin,
@@ -115,13 +102,11 @@ function ContenuVitrine() {
         canal,
       });
 
-      // Ferme la fenêtre de saisie et nettoie le formulaire
       setArticleSelectionne(null);
       setPrenom("");
       setTelephone("");
-    } catch (err) {
-      console.error(err);
-      alert("Erreur lors de la réservation. Veuillez réessayer.");
+    } catch (e) {
+      alert("Erreur lors de la réservation : " + e.message);
     } finally {
       setEnvoiEnCours(false);
     }
@@ -144,160 +129,288 @@ function ContenuVitrine() {
   }
 
   return (
-    <div className="min-h-screen bg-stone-50 pb-12 font-sans">
-      {/* EN-TÊTE DE LA VITRINE */}
-      <header className="bg-white shadow-xs sticky top-0 z-10 px-4 py-4 text-center border-b border-stone-100">
-        <span className="inline-block bg-amber-100 text-amber-800 text-xs font-semibold px-2.5 py-0.5 rounded-full mb-1">
-          ✨ Vitrine Connectée 24/7
-        </span>
-        <h1 className="text-2xl font-bold text-stone-900">{boutique.nom}</h1>
-        <p className="text-xs text-stone-500 mt-0.5">
-          Réservez gratuitement en 1 clic • Essayez et payez en boutique
-        </p>
+    <div className="min-h-screen bg-stone-100 pb-20 font-sans">
+      {/* EN-TÊTE VITRINE */}
+      <header className="bg-white border-b border-stone-200 sticky top-0 z-20 px-4 py-3.5 shadow-xs">
+        <div className="max-w-md mx-auto flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-extrabold tracking-wider uppercase text-amber-600 block">
+              Vitrine du moment
+            </span>
+            <h1 className="text-lg font-black text-stone-900 leading-tight">
+              {boutique.nom}
+            </h1>
+          </div>
+          <span className="text-xs bg-amber-50 text-amber-800 font-bold px-2.5 py-1 rounded-full border border-amber-200">
+            Pièces uniques ✨
+          </span>
+        </div>
       </header>
 
-      {/* GRILLE DES PÉPITES */}
+      {/* GRILLE DES ARTICLES */}
       <main className="max-w-md mx-auto px-3 pt-4">
-        <div className="grid grid-cols-2 gap-3">
-          {articles.map((article) => {
-            const reserve = estArticleReserve(article);
+        {articles.length === 0 ? (
+          <div className="text-center py-16 text-stone-400 text-sm">
+            Aucun article en vitrine pour l'instant.
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            {articles.map((article) => {
+              const estReserve =
+                article.statut === "confirme" ||
+                (article.statut === "pre_reserve" &&
+                  new Date(article.pre_reserve_jusqua) > new Date());
 
-            return (
-              <div
-                key={article.id}
-                className="bg-white rounded-2xl overflow-hidden shadow-xs border border-stone-100 flex flex-col justify-between"
-              >
-                <div>
-                  <div className="relative aspect-[4/5] bg-stone-200">
+              return (
+                <div
+                  key={article.id}
+                  className="bg-white rounded-3xl overflow-hidden shadow-xs border border-stone-200/80 flex flex-col justify-between"
+                >
+                  {/* ZONE PHOTO + CLIC POUR ZOOM */}
+                  <div
+                    onClick={() => setArticleApercu(article)}
+                    className="relative aspect-3/4 bg-stone-100 cursor-pointer group"
+                    title="Cliquer pour agrandir"
+                  >
                     <img
                       src={article.photo_url}
                       alt={article.titre}
-                      className={`w-full h-full object-cover ${
-                        reserve ? "opacity-50 grayscale-[30%]" : ""
-                      }`}
+                      className="w-full h-full object-cover group-hover:scale-103 transition duration-300"
                     />
-                    <span className="absolute top-2 left-2 bg-black/75 backdrop-blur-xs text-white text-xs font-bold px-2.5 py-1 rounded-lg">
+
+                    {/* Badge Taille */}
+                    <span className="absolute top-2.5 left-2.5 bg-stone-900/85 backdrop-blur-xs text-white text-[11px] font-bold px-2.5 py-1 rounded-lg">
                       {article.taille}
                     </span>
-                    {reserve && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-                        <span className="bg-white text-stone-900 text-xs font-bold px-3 py-1.5 rounded-full shadow-sm">
-                          🔒 Déjà en cabine
+
+                    {/* Icône discrète loupe */}
+                    <span className="absolute bottom-2 right-2 bg-white/80 backdrop-blur-xs text-stone-700 w-6 h-6 rounded-full flex items-center justify-center text-xs shadow-xs opacity-75 group-hover:opacity-100 transition">
+                      🔍
+                    </span>
+
+                    {/* Voile si réservé */}
+                    {estReserve && (
+                      <div className="absolute inset-0 bg-stone-900/70 backdrop-blur-xs flex items-center justify-center p-3 text-center">
+                        <span className="bg-amber-400 text-stone-950 font-black text-xs uppercase px-2.5 py-1.5 rounded-xl shadow-md">
+                          Déjà en cabine 🔒
                         </span>
                       </div>
                     )}
                   </div>
 
-                  <div className="p-3">
-                    <h2 className="text-sm font-medium text-stone-800 line-clamp-1">
-                      {article.titre}
-                    </h2>
-                    <p className="text-lg font-extrabold text-stone-900 mt-0.5">
-                      {article.prix} €
-                    </p>
+                  {/* ZONE INFOS : TITRE SUR 2 LIGNES + PRIX */}
+                  <div className="p-3 flex-1 flex flex-col justify-between">
+                    <div>
+                      {/* Affichage sur 2 lignes maximum avec line-clamp-2 */}
+                      <h3
+                        onClick={() => setArticleApercu(article)}
+                        className="font-bold text-stone-900 text-sm leading-snug line-clamp-2 min-h-[2.5rem] cursor-pointer hover:text-amber-700 transition"
+                        title={article.titre}
+                      >
+                        {article.titre}
+                      </h3>
+                      <p className="font-extrabold text-stone-950 text-base mt-1">
+                        {article.prix} €
+                      </p>
+                    </div>
+
+                    {/* BOUTON D'ACTION */}
+                    <div className="mt-3">
+                      {estReserve ? (
+                        <button
+                          disabled
+                          className="w-full bg-stone-100 text-stone-400 font-bold text-xs py-2.5 rounded-xl cursor-not-allowed"
+                        >
+                          Mis de côté
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => setArticleSelectionne(article)}
+                          className="w-full bg-stone-900 hover:bg-stone-800 active:scale-97 transition text-white font-bold text-xs py-2.5 rounded-xl shadow-xs cursor-pointer"
+                        >
+                          Mettre de côté (24h)
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
-
-                <div className="px-3 pb-3">
-                  {!reserve ? (
-                    <button
-                      onClick={() => setArticleSelectionne(article)}
-                      className="w-full bg-stone-900 hover:bg-stone-800 active:scale-95 transition text-white text-xs font-semibold py-2.5 px-3 rounded-xl shadow-xs cursor-pointer"
-                    >
-                      Mettre de côté (24h)
-                    </button>
-                  ) : (
-                    <button
-                      disabled
-                      className="w-full bg-stone-100 text-stone-400 text-xs font-medium py-2.5 px-3 rounded-xl cursor-not-allowed"
-                    >
-                      Déjà réservé
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </main>
 
-      {/* 1. MODALE DE SAISIE CLIENTE */}
+      {/* 1. MODALE ZOOM / GRAND FORMAT (CLIC EN FOND POUR REVENIR À LA VITRINE) */}
+      {articleApercu && (
+        <div
+          onClick={() => setArticleApercu(null)}
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl relative max-h-[90vh] flex flex-col"
+          >
+            {/* Bouton Fermer */}
+            <button
+              onClick={() => setArticleApercu(null)}
+              className="absolute top-3 right-3 z-10 bg-stone-900/70 hover:bg-stone-900 text-white w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shadow-md cursor-pointer transition"
+              title="Fermer"
+            >
+              ✕
+            </button>
+
+            {/* Photo Agrandie */}
+            <div className="relative aspect-3/4 bg-stone-100 overflow-hidden">
+              <img
+                src={articleApercu.photo_url}
+                alt={articleApercu.titre}
+                className="w-full h-full object-cover"
+              />
+              <span className="absolute top-3 left-3 bg-stone-900/85 backdrop-blur-xs text-white text-xs font-bold px-3 py-1 rounded-lg">
+                Taille : {articleApercu.taille}
+              </span>
+            </div>
+
+            {/* Détails complets sans coupure */}
+            <div className="p-5 overflow-y-auto">
+              <h2 className="text-lg font-black text-stone-900 leading-tight">
+                {articleApercu.titre}
+              </h2>
+              <p className="text-xl font-extrabold text-amber-600 mt-1">
+                {articleApercu.prix} €
+              </p>
+
+              <div className="mt-4 pt-3 border-t border-stone-100 flex gap-2">
+                <button
+                  onClick={() => setArticleApercu(null)}
+                  className="flex-1 bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold text-xs py-3 rounded-xl cursor-pointer"
+                >
+                  ← Retour vitrine
+                </button>
+
+                {articleApercu.statut === "disponible" && (
+                  <button
+                    onClick={() => {
+                      const cible = articleApercu;
+                      setArticleApercu(null);
+                      setArticleSelectionne(cible);
+                    }}
+                    className="flex-1 bg-stone-900 hover:bg-stone-800 text-white font-bold text-xs py-3 rounded-xl shadow-md cursor-pointer"
+                  >
+                    Mettre de côté ✨
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2. MODALE FORMULAIRE DE RÉSERVATION */}
       {articleSelectionne && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl">
-            <div className="flex justify-between items-start mb-4">
+        <div
+          onClick={() => setArticleSelectionne(null)}
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl space-y-4"
+          >
+            <div className="flex justify-between items-center border-b border-stone-100 pb-3">
               <div>
-                <span className="text-xs font-bold uppercase tracking-wider text-emerald-600">
-                  Mise de côté gratuite
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600">
+                  Bloquer pour essayage
                 </span>
-                <h3 className="text-lg font-bold text-stone-900">
-                  {articleSelectionne.titre} ({articleSelectionne.prix} €)
+                <h3 className="text-base font-bold text-stone-900">
+                  {articleSelectionne.titre}
                 </h3>
               </div>
               <button
+                type="button"
                 onClick={() => setArticleSelectionne(null)}
-                className="text-stone-400 hover:text-stone-600 text-xl font-bold px-2 cursor-pointer"
+                className="text-stone-400 hover:text-stone-700 font-bold text-xl px-2 cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            <p className="text-xs text-stone-600 mb-4 leading-relaxed">
-              Nous mettons cette pièce de côté en cabine <strong>le temps de votre passage</strong>. Sans engagement et sans paiement en ligne !
-            </p>
-
-            <div className="mb-3">
-              <label className="block text-xs font-semibold text-stone-700 mb-1">
-                Votre prénom (pour l'étiquette en cabine) :
-              </label>
-              <input
-                type="text"
-                placeholder="Ex: Julie"
-                value={prenom}
-                onChange={(e) => setPrenom(e.target.value)}
-                autoFocus
-                className="w-full border border-stone-300 rounded-xl px-4 py-2.5 text-sm text-stone-900 focus:outline-hidden focus:ring-2 focus:ring-stone-900"
+            <div className="flex items-center gap-3 bg-stone-50 p-3 rounded-2xl">
+              <img
+                src={articleSelectionne.photo_url}
+                alt={articleSelectionne.titre}
+                className="w-12 h-14 object-cover rounded-xl shrink-0"
               />
+              <div className="text-xs">
+                <p className="font-bold text-stone-900">
+                  {articleSelectionne.taille} • {articleSelectionne.prix} €
+                </p>
+                <p className="text-stone-500">
+                  Mise de côté gratuite jusqu'à demain.
+                </p>
+              </div>
             </div>
 
-            <div className="mb-5">
-              <label className="block text-xs font-semibold text-stone-700 mb-1">
-                Votre numéro de mobile :
-              </label>
-              <input
-                type="tel"
-                placeholder="Ex: 06 12 34 56 78"
-                value={telephone}
-                onChange={(e) => setTelephone(e.target.value)}
-                className="w-full border border-stone-300 rounded-xl px-4 py-2.5 text-sm text-stone-900 focus:outline-hidden focus:ring-2 focus:ring-stone-900"
-              />
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-stone-700 mb-1">
+                  Votre prénom :
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ex: Camille"
+                  value={prenom}
+                  onChange={(e) => setPrenom(e.target.value)}
+                  className="w-full border border-stone-300 rounded-xl px-3.5 py-2.5 text-sm text-stone-900"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-700 mb-1">
+                  Votre mobile (pour recevoir le SMS du ticket) :
+                </label>
+                <input
+                  type="tel"
+                  placeholder="Ex: 06 12 34 56 78"
+                  value={telephone}
+                  onChange={(e) => setTelephone(e.target.value)}
+                  className="w-full border border-stone-300 rounded-xl px-3.5 py-2.5 text-sm text-stone-900"
+                />
+              </div>
             </div>
 
-            <div className="space-y-2.5">
+            <div className="pt-2 space-y-2">
               <button
-                onClick={() => lancerReservation("sms")}
+                type="button"
                 disabled={envoiEnCours}
-                className="w-full bg-stone-900 hover:bg-stone-800 text-white font-semibold text-sm py-3.5 rounded-xl flex items-center justify-center gap-2 shadow-md cursor-pointer active:scale-98 disabled:opacity-50"
+                onClick={() => lancerReservation("sms")}
+                className="w-full bg-stone-900 hover:bg-stone-800 text-white font-bold text-sm py-3 rounded-xl shadow-md cursor-pointer disabled:opacity-50"
               >
-                <span>💬</span> {envoiEnCours ? "Enregistrement..." : "Bloquer la pièce par SMS"}
+                {envoiEnCours ? "Blocage en cours..." : "🔒 Confirmer ma réservation (SMS)"}
               </button>
 
               <button
-                onClick={() => lancerReservation("whatsapp")}
+                type="button"
                 disabled={envoiEnCours}
-                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm py-3.5 rounded-xl flex items-center justify-center gap-2 shadow-md cursor-pointer active:scale-98 disabled:opacity-50"
+                onClick={() => lancerReservation("whatsapp")}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm py-3 rounded-xl shadow-md cursor-pointer disabled:opacity-50"
               >
-                <span>🟢</span> {envoiEnCours ? "Enregistrement..." : "Bloquer via WhatsApp"}
+                🟢 Confirmer via WhatsApp
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* 2. MODALE TICKET DE CONFIRMATION (#BM-XXX) */}
+      {/* 3. MODALE TICKET DE CONFIRMATION */}
       {ticketConfirmation && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl text-center">
+        <div
+          onClick={() => setTicketConfirmation(null)}
+          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 animate-in zoom-in-95"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl text-center"
+          >
             <span className="text-3xl mb-2 block">🎉</span>
             <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-100 px-3 py-1 rounded-full">
               C'est mis de côté !
@@ -307,7 +420,7 @@ function ContenuVitrine() {
               Réservation confirmée
             </h3>
             <p className="text-xs text-stone-500 mb-4">
-              Votre pièce est gardée en cabine chez <strong>{boutique.nom}</strong>.
+              Votre pièce est gardée en cabine chez <strong>{boutique.nom}</strong>[cite: 2].
             </p>
 
             <div className="bg-stone-50 border border-stone-200 rounded-2xl p-4 mb-4 text-left space-y-1.5">
@@ -337,7 +450,7 @@ function ContenuVitrine() {
               }`}
             >
               <span>{ticketConfirmation.canal === "whatsapp" ? "🟢" : "💬"}</span>
-              Ouvrir {ticketConfirmation.canal === "whatsapp" ? "WhatsApp" : "mon SMS"} pour Marion
+              Prévenir {boutique.nom} par {ticketConfirmation.canal === "whatsapp" ? "WhatsApp" : "SMS"}
             </a>
 
             <button
@@ -353,12 +466,12 @@ function ContenuVitrine() {
   );
 }
 
-export default function VitrineCliente() {
+export default function PageVitrine() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex items-center justify-center text-stone-500 font-sans">
-          Chargement de la page...
+        <div className="min-h-screen flex items-center justify-center font-sans text-stone-400">
+          Chargement de la vitrine...
         </div>
       }
     >
