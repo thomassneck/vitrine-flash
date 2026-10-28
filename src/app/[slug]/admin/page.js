@@ -188,7 +188,7 @@ function ContenuAdmin() {
     }
   };
 
-  // 1. Publier une nouvelle pépite en vitrine
+  // 1. Publier un nouvel article en vitrine
   const ajouterArticle = async (e) => {
     e.preventDefault();
     if (!fichierPhoto || !titre || !prix) {
@@ -573,7 +573,7 @@ function ContenuAdmin() {
           onClick={() => setModaleAjout(true)}
           className="w-full bg-amber-500 hover:bg-amber-600 active:scale-98 transition text-stone-950 font-extrabold text-sm py-4 rounded-2xl shadow-md flex items-center justify-center gap-2 cursor-pointer"
         >
-          <span className="text-lg">📸</span> + Ajouter une pépite en vitrine (15s)
+          <span className="text-lg">📸</span> + Ajouter un article en vitrine
         </button>
 
         <h2 className="text-xs font-bold uppercase tracking-wider text-stone-500 pt-2 px-1">
@@ -791,7 +791,7 @@ function ContenuAdmin() {
             className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl space-y-4"
           >
             <div className="flex justify-between items-center">
-              <h3 className="text-lg font-bold text-stone-900">Nouvelle pépite en vitrine</h3>
+              <h3 className="text-lg font-bold text-stone-900">Nouvel article en vitrine</h3>
               <button
                 type="button"
                 onClick={() => setModaleAjout(false)}
