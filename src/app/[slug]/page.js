@@ -130,17 +130,18 @@ function ContenuVitrine() {
 
   return (
     <div className="min-h-screen bg-stone-100 pb-20 font-sans">
-      {/* EN-TÊTE VITRINE */}
-      <header className="bg-white border-b border-stone-200 sticky top-0 z-20 px-4 py-3.5 shadow-xs">
-        <div className="max-w-md mx-auto flex items-center justify-between">
-          <div>
-            <span className="text-[10px] font-extrabold tracking-wider uppercase text-amber-600 block">
-              Vitrine du moment
-            </span>
-            <h1 className="text-lg font-black text-stone-900 leading-tight">
-              {boutique.nom}
-            </h1>
-          </div>
+      {/* EN-TÊTE VITRINE CENTRÉ */}
+      <header className="bg-white border-b border-stone-200 sticky top-0 z-20 px-4 py-4 text-center shadow-xs">
+        <div className="max-w-md mx-auto flex flex-col items-center">
+          <span className="inline-block bg-amber-100 text-amber-800 text-xs font-semibold px-2.5 py-0.5 rounded-full mb-1">
+            ✨ Vitrine connectée 24/7
+          </span>
+          <h1 className="text-2xl font-bold text-stone-900 leading-tight">
+            {boutique.nom}
+          </h1>
+          <p className="text-xs text-stone-500 mt-1">
+            Réservez gratuitement en 1 clic • Essayez et payez en boutique
+          </p>
         </div>
       </header>
 
