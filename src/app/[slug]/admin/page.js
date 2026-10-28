@@ -45,15 +45,15 @@ function ContenuAdmin() {
   const [autorise, setAutorise] = useState(false);
   const [motDePasseSaisi, setMotDePasseSaisi] = useState("");
 
-  // États pour Mot de passe oublié & Réglages (Code + Téléphone + email)
+  // États pour Mot de passe oublié & Réglages (Code + Téléphone + Email)
   const [modeOubli, setModeOubli] = useState(false);
   const [quatreChiffres, setQuatreChiffres] = useState("");
   const [nouveauMdpOubli, setNouveauMdpOubli] = useState("");
-  const [nouvelEmail, setNouvelEmail] = useState("");
 
   const [modaleReglages, setModaleReglages] = useState(false);
   const [nouveauTel, setNouveauTel] = useState("");
   const [nouveauMdp, setNouveauMdp] = useState("");
+  const [nouvelEmail, setNouvelEmail] = useState("");
 
   // Connexion automatique si le téléphone s'en souvient déjà
   useEffect(() => {
@@ -71,7 +71,7 @@ function ContenuAdmin() {
   const [apercuPhoto, setApercuPhoto] = useState(null);
   const [publicationEnCours, setPublicationEnCours] = useState(false);
 
-  // NOUVEAU : États pour la modale de modification d'article
+  // États pour la modale de modification d'article
   const [articleEnModif, setArticleEnModif] = useState(null);
   const [modifTitre, setModifTitre] = useState("");
   const [modifPrix, setModifPrix] = useState("");
@@ -90,8 +90,8 @@ function ContenuAdmin() {
 
     if (dataBoutique) {
       setBoutique(dataBoutique);
-      setNouveauTel(dataBoutique.telephone_pro);
-      setNouveauMdp(dataBoutique.mot_de_passe_admin);
+      setNouveauTel(dataBoutique.telephone_pro || "");
+      setNouveauMdp(dataBoutique.mot_de_passe_admin || "");
       setNouvelEmail(dataBoutique.email || "");
 
       // Charger tous les articles (sauf les vendus archivés)
@@ -216,7 +216,7 @@ function ContenuAdmin() {
     await chargerDonneesAdmin();
   };
 
-  // NOUVEAU : Préremplir et ouvrir la modale de modification
+  // Préremplir et ouvrir la modale de modification
   const ouvrirModaleModif = (article) => {
     setArticleEnModif(article);
     setModifTitre(article.titre);
@@ -226,7 +226,7 @@ function ContenuAdmin() {
     setModifApercuPhoto(article.photo_url);
   };
 
-  // NOUVEAU : Sauvegarder la modification dans Supabase
+  // Sauvegarder la modification dans Supabase
   const enregistrerModification = async (e) => {
     e.preventDefault();
     if (!modifTitre.trim() || !modifPrix) {
@@ -239,7 +239,6 @@ function ContenuAdmin() {
     try {
       let nouvelleUrlPhoto = articleEnModif.photo_url;
 
-      // Si une nouvelle photo a été choisie
       if (modifFichierPhoto) {
         const imageCompressee = await compresserPhoto(modifFichierPhoto);
         const cheminFichier = `${boutique.slug}/${imageCompressee.name}`;
@@ -256,7 +255,6 @@ function ContenuAdmin() {
 
         nouvelleUrlPhoto = urlData.publicUrl;
 
-        // Supprimer l'ancienne photo du stockage pour ne pas encombrer Supabase
         if (articleEnModif.photo_url && articleEnModif.photo_url.includes("/photos-vitrine/")) {
           const ancienChemin = articleEnModif.photo_url.split("/photos-vitrine/")[1];
           if (ancienChemin) {
@@ -286,7 +284,7 @@ function ContenuAdmin() {
     }
   };
 
-  // 4. Sauvegarder les réglages
+  // 4. Sauvegarder les réglages (Téléphone + Email + Mot de passe)
   const sauvegarderReglages = async (e) => {
     e.preventDefault();
     if (!nouveauTel.trim() || !nouveauMdp.trim()) {
@@ -304,14 +302,14 @@ function ContenuAdmin() {
       .update({
         telephone_pro: telFormate,
         mot_de_passe_admin: nouveauMdp.trim(),
-        email: nouvelEmail.trim(),
+        email: nouvelEmail.trim() || null,
       })
       .eq("id", boutique.id);
 
     if (error) {
       alert("Erreur lors de la mise à jour : " + error.message);
     } else {
-      alert("✅ Vos réglages ont bien été enregistrés !");
+      alert("✅ Vos réglages (Téléphone, Email & Code) ont bien été enregistrés !");
       setModaleReglages(false);
       await chargerDonneesAdmin();
     }
@@ -476,7 +474,7 @@ function ContenuAdmin() {
           onClick={() => setModaleAjout(true)}
           className="w-full bg-amber-500 hover:bg-amber-600 active:scale-98 transition text-stone-950 font-extrabold text-sm py-4 rounded-2xl shadow-md flex items-center justify-center gap-2 cursor-pointer"
         >
-          <span className="text-lg">📸</span> + Ajouter une pépite en vitrine
+          <span className="text-lg">📸</span> + Ajouter une pépite en vitrine (15s)
         </button>
 
         <h2 className="text-xs font-bold uppercase tracking-wider text-stone-500 pt-2 px-1">
@@ -533,7 +531,7 @@ function ContenuAdmin() {
                 </div>
               </div>
 
-              {/* BOUTONS D'ACTION : Vendu / Libérer / Modifier / Retirer */}
+              {/* BOUTONS D'ACTION */}
               <div className="flex flex-wrap gap-2 mt-3 pt-2 border-t border-stone-100">
                 <button
                   onClick={() => changerStatutArticle(article.id, "vendu")}
@@ -590,7 +588,6 @@ function ContenuAdmin() {
               </button>
             </div>
 
-            {/* Aperçu et sélection de l'image */}
             <div>
               <div className="border-2 border-dashed border-stone-300 rounded-2xl p-3 text-center bg-stone-50">
                 {apercuPhoto ? (
@@ -611,7 +608,6 @@ function ContenuAdmin() {
                   </div>
                 )}
 
-                {/* Les 2 boutons côte à côte */}
                 <div className="grid grid-cols-2 gap-2 mt-3">
                   <label className="cursor-pointer bg-stone-900 hover:bg-stone-800 text-white text-xs font-semibold py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 active:scale-95 transition">
                     <span>📸</span> Prendre photo
@@ -639,7 +635,6 @@ function ContenuAdmin() {
               </div>
             </div>
 
-            {/* Titre */}
             <div>
               <label className="block text-xs font-semibold text-stone-700 mb-1">
                 Nom de la pièce :
@@ -654,7 +649,6 @@ function ContenuAdmin() {
               />
             </div>
 
-            {/* Prix et Taille */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-stone-700 mb-1">
@@ -697,7 +691,7 @@ function ContenuAdmin() {
         </div>
       )}
 
-      {/* NOUVEAU : MODALE DE MODIFICATION D'ARTICLE */}
+      {/* MODALE DE MODIFICATION D'ARTICLE */}
       {articleEnModif && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4">
           <form
@@ -722,7 +716,6 @@ function ContenuAdmin() {
               </button>
             </div>
 
-            {/* Aperçu et remplacement éventuel de la photo */}
             <div>
               <div className="border border-stone-200 rounded-2xl p-3 text-center bg-stone-50">
                 <img
@@ -770,7 +763,6 @@ function ContenuAdmin() {
               </div>
             </div>
 
-            {/* Titre */}
             <div>
               <label className="block text-xs font-semibold text-stone-700 mb-1">
                 Nom de la pièce :
@@ -784,7 +776,6 @@ function ContenuAdmin() {
               />
             </div>
 
-            {/* Prix et Taille */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-stone-700 mb-1">
@@ -827,7 +818,7 @@ function ContenuAdmin() {
         </div>
       )}
 
-      {/* MODALE DES RÉGLAGES */}
+      {/* MODALE DES RÉGLAGES (AVEC EMAIL, TÉLÉPHONE & CODE) */}
       {modaleReglages && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4">
           <form
@@ -840,7 +831,7 @@ function ContenuAdmin() {
                   Paramètres de la boutique
                 </span>
                 <h3 className="text-lg font-bold text-stone-900">
-                  Téléphone & Code d'accès
+                  Contact & Sécurité
                 </h3>
               </div>
               <button
@@ -852,9 +843,10 @@ function ContenuAdmin() {
               </button>
             </div>
 
+            {/* Téléphone */}
             <div>
               <label className="block text-xs font-bold text-stone-700 mb-1">
-                📱 Numéro qui reçoit les réservations (SMS & WhatsApp) :
+                📱 Numéro de réception (SMS & WhatsApp) :
               </label>
               <input
                 type="tel"
@@ -869,6 +861,24 @@ function ContenuAdmin() {
               </p>
             </div>
 
+            {/* Email de réception des réservations */}
+            <div>
+              <label className="block text-xs font-bold text-stone-700 mb-1">
+                ✉️ Email de réception des alertes :
+              </label>
+              <input
+                type="email"
+                placeholder="Ex: contact@bisou-magique.fr"
+                value={nouvelEmail}
+                onChange={(e) => setNouvelEmail(e.target.value)}
+                className="w-full border border-stone-300 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-stone-900"
+              />
+              <p className="text-[11px] text-stone-400 mt-1">
+                C'est à cette adresse que la boutique recevra le récapitulatif de chaque réservation.
+              </p>
+            </div>
+
+            {/* Mot de passe vendeuse */}
             <div>
               <label className="block text-xs font-bold text-stone-700 mb-1">
                 🔑 Code secret vendeuse (Mot de passe Admin) :
