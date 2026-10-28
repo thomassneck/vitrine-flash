@@ -474,7 +474,7 @@ function ContenuAdmin() {
           onClick={() => setModaleAjout(true)}
           className="w-full bg-amber-500 hover:bg-amber-600 active:scale-98 transition text-stone-950 font-extrabold text-sm py-4 rounded-2xl shadow-md flex items-center justify-center gap-2 cursor-pointer"
         >
-          <span className="text-lg">📸</span> + Ajouter un article en vitrine (15s)
+          <span className="text-lg">📸</span> + Ajouter un article en vitrine
         </button>
 
         <h2 className="text-xs font-bold uppercase tracking-wider text-stone-500 pt-2 px-1">
