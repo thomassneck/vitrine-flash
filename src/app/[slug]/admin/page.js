@@ -34,6 +34,57 @@ async function compresserPhoto(file) {
   });
 }
 
+// Détermine la date/heure exacte limite d'une réservation selon sa date de création
+function verifierEcheanceResa(dateCreationISO) {
+  if (!dateCreationISO) return { depassee: true, libelle: "Heure limite atteinte" };
+
+  const dateResa = new Date(dateCreationISO);
+  // Heure locale française au moment de la réservation
+  const dateResaFr = new Date(dateResa.toLocaleString("en-US", { timeZone: "Europe/Paris" }));
+  const heure = dateResaFr.getHours();
+  const jour = dateResaFr.getDay(); // 0 = Dimanche, 1 = Lundi... 6 = Samedi
+
+  const dateEcheance = new Date(dateResaFr);
+
+  if (heure < 14 && jour !== 0 && jour !== 1) {
+    // Réservé le matin : expire ce soir à 18h30
+    dateEcheance.setHours(18, 30, 0, 0);
+    return {
+      depassee: new Date() > dateEcheance,
+      libelle: "Aujourd'hui à 18h30",
+    };
+  }
+
+  if (jour === 0 || (jour === 6 && heure >= 14)) {
+    // Samedi soir ou dimanche : expire mardi à 14h00
+    const joursRestants = jour === 0 ? 2 : 3;
+    dateEcheance.setDate(dateEcheance.getDate() + joursRestants);
+    dateEcheance.setHours(14, 0, 0, 0);
+    return {
+      depassee: new Date() > dateEcheance,
+      libelle: "Mardi à 14h00",
+    };
+  }
+
+  if (jour === 1) {
+    // Lundi : expire mardi à 18h30
+    dateEcheance.setDate(dateEcheance.getDate() + 1);
+    dateEcheance.setHours(18, 30, 0, 0);
+    return {
+      depassee: new Date() > dateEcheance,
+      libelle: "Mardi à 18h30",
+    };
+  }
+
+  // Réservé l'après-midi ou le soir : expire le lendemain à 14h00
+  dateEcheance.setDate(dateEcheance.getDate() + 1);
+  dateEcheance.setHours(14, 0, 0, 0);
+  return {
+    depassee: new Date() > dateEcheance,
+    libelle: "Demain à 14h00",
+  };
+}
+
 function ContenuAdmin() {
   const { slug } = useParams();
   const [boutique, setBoutique] = useState(null);
@@ -618,7 +669,7 @@ function ContenuAdmin() {
         })}
       </main>
 
-      {/* MODALE BILAN DU SOIR / CLÔTURE (REMISE EN RAYON GROUPÉE) */}
+      {/* MODALE BILAN DU SOIR / CLÔTURE AVEC DISTINCTION ROUGE / EN COURS */}
       {modaleCloture && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
@@ -645,34 +696,61 @@ function ContenuAdmin() {
                 <span className="text-4xl block">🎉</span>
                 <p className="text-sm font-bold text-stone-900">Tout est en ordre !</p>
                 <p className="text-xs text-stone-500">
-                  Aucun article n'est bloqué derrière la caisse. Toutes les pièces réservées ont été retirées ou libérées.
+                  Aucun article n'est bloqué derrière la caisse.
                 </p>
               </div>
             ) : (
               <div className="space-y-3">
                 <p className="text-xs text-stone-600 leading-relaxed">
-                  Ces <strong>{articlesNonRetires.length} pièce(s)</strong> sont restées de côté. Replacez-les sur cintre avant de fermer :
+                  Vérifiez le statut des pièces avant de fermer. Les pièces en <strong className="text-red-600">rouge</strong> doivent être remises en rayon :
                 </p>
 
-                <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
                   {articlesNonRetires.map((art) => {
                     const resa = reservations.find((r) => r.article_id === art.id);
+                    const echeance = verifierEcheanceResa(resa?.created_at);
+
                     return (
                       <div
                         key={art.id}
-                        className="bg-stone-50 border border-stone-200 rounded-xl p-3 flex items-center justify-between gap-2"
+                        className={`rounded-2xl p-3 flex items-center justify-between gap-2 border-2 transition ${
+                          echeance.depassee
+                            ? "bg-red-50/60 border-red-400"
+                            : "bg-stone-50 border-stone-200"
+                        }`}
                       >
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <span
+                              className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md ${
+                                echeance.depassee
+                                  ? "bg-red-600 text-white"
+                                  : "bg-emerald-100 text-emerald-800"
+                              }`}
+                            >
+                              {echeance.depassee ? "⏰ À replacer" : "⏳ En cours"}
+                            </span>
+                            <span className="text-[11px] font-semibold text-stone-500">
+                              Jusqu'à : {echeance.libelle}
+                            </span>
+                          </div>
+
                           <p className="text-xs font-bold text-stone-900 truncate">
                             {art.titre} <span className="font-normal text-stone-500">({art.taille} • {art.prix} €)</span>
                           </p>
-                          <p className="text-[11px] text-amber-800 font-medium truncate mt-0.5">
+
+                          <p className="text-[11px] text-stone-600 font-medium truncate mt-0.5">
                             👤 {resa ? `${resa.prenom_cliente} (${resa.telephone_cliente || "Sans tél"})` : "Réservation active"}
                           </p>
                         </div>
+
                         <button
                           onClick={() => changerStatutArticle(art.id, "disponible")}
-                          className="bg-stone-900 hover:bg-stone-800 text-white text-[11px] font-semibold py-1.5 px-2.5 rounded-lg shrink-0 cursor-pointer"
+                          className={`text-white text-[11px] font-bold py-2 px-3 rounded-xl shrink-0 cursor-pointer shadow-xs ${
+                            echeance.depassee
+                              ? "bg-red-600 hover:bg-red-700"
+                              : "bg-stone-800 hover:bg-stone-700"
+                          }`}
                         >
                           En rayon
                         </button>
@@ -681,12 +759,24 @@ function ContenuAdmin() {
                   })}
                 </div>
 
-                <button
-                  onClick={() => libererTousLesArticles(articlesNonRetires)}
-                  className="w-full bg-amber-500 hover:bg-amber-600 text-stone-950 font-extrabold text-xs py-3 rounded-xl shadow-xs transition active:scale-98 cursor-pointer mt-2"
-                >
-                  ✨ Tout remettre en vitrine ({articlesNonRetires.length} pièce{articlesNonRetires.length > 1 ? "s" : ""})
-                </button>
+                {/* Remet en rayon en 1 clic uniquement les pièces expirées */}
+                {(() => {
+                  const expirés = articlesNonRetires.filter((art) => {
+                    const resa = reservations.find((r) => r.article_id === art.id);
+                    return verifierEcheanceResa(resa?.created_at).depassee;
+                  });
+
+                  if (expirés.length === 0) return null;
+
+                  return (
+                    <button
+                      onClick={() => libererTousLesArticles(expirés)}
+                      className="w-full bg-red-600 hover:bg-red-700 text-white font-extrabold text-xs py-3 rounded-xl shadow-xs transition active:scale-98 cursor-pointer mt-2"
+                    >
+                      ✨ Remettre en vitrine les {expirés.length} pièce(s) expirée(s)
+                    </button>
+                  );
+                })()}
               </div>
             )}
           </div>
