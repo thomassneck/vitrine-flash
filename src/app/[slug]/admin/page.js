@@ -45,10 +45,11 @@ function ContenuAdmin() {
   const [autorise, setAutorise] = useState(false);
   const [motDePasseSaisi, setMotDePasseSaisi] = useState("");
 
-  // États pour Mot de passe oublié & Réglages (Code + Téléphone)
+  // États pour Mot de passe oublié & Réglages (Code + Téléphone + email)
   const [modeOubli, setModeOubli] = useState(false);
   const [quatreChiffres, setQuatreChiffres] = useState("");
   const [nouveauMdpOubli, setNouveauMdpOubli] = useState("");
+  const [nouvelEmail, setNouvelEmail] = useState("");
 
   const [modaleReglages, setModaleReglages] = useState(false);
   const [nouveauTel, setNouveauTel] = useState("");
@@ -91,6 +92,7 @@ function ContenuAdmin() {
       setBoutique(dataBoutique);
       setNouveauTel(dataBoutique.telephone_pro);
       setNouveauMdp(dataBoutique.mot_de_passe_admin);
+      setNouvelEmail(dataBoutique.email || "");
 
       // Charger tous les articles (sauf les vendus archivés)
       const { data: dataArticles } = await supabase
@@ -302,6 +304,7 @@ function ContenuAdmin() {
       .update({
         telephone_pro: telFormate,
         mot_de_passe_admin: nouveauMdp.trim(),
+        email: nouvelEmail.trim(),
       })
       .eq("id", boutique.id);
 

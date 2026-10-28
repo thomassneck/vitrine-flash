@@ -4,6 +4,7 @@ CREATE TABLE boutiques (
   slug TEXT UNIQUE NOT NULL,           -- ex: 'bisou-magique' (pour l'URL vitrine.app.fr/bisou-magique)
   nom TEXT NOT NULL,                   -- ex: 'Bisou Magique'
   telephone_pro TEXT NOT NULL,         -- ex: '+33612345678' (le 06 de Marion qui reçoit le SMS/WhatsApp)
+  email TEXT,
   mot_de_passe_admin TEXT NOT NULL,    -- Code simple ou hash pour l'accès vendeuse
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -96,3 +97,8 @@ CREATE POLICY "Acces public suppression photos" ON storage.objects FOR DELETE US
 CREATE POLICY "Autoriser modification reglages boutique" ON boutiques FOR UPDATE USING (true) WITH CHECK (true);
 CREATE POLICY "Acces public upload photos" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'photos-vitrine');
 CREATE POLICY "Acces public lecture photos" ON storage.objects FOR SELECT USING (bucket_id = 'photos-vitrine');
+
+-- 2. Renseigne l'e-mail pour votre première boutique (Bisou Magique)
+UPDATE boutiques 
+SET email = 'contact@bisou-magique.fr' 
+WHERE slug = 'bisou-magique';
