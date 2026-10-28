@@ -418,7 +418,7 @@ function ContenuVitrine() {
               Réservation confirmée
             </h3>
             <p className="text-xs text-stone-500 mb-4">
-              Votre pièce est gardée en cabine chez <strong>{boutique.nom}</strong>[cite: 2].
+              Votre pièce est gardée en cabine chez <strong>{boutique.nom}</strong>.
             </p>
 
             <div className="bg-stone-50 border border-stone-200 rounded-2xl p-4 mb-4 text-left space-y-1.5">
