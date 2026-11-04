@@ -6,8 +6,18 @@ CREATE TABLE boutiques (
   telephone_pro TEXT NOT NULL,         -- ex: '+33612345678' (le 06 de Marion qui reçoit le SMS/WhatsApp)
   email TEXT,
   mot_de_passe_admin TEXT NOT NULL,    -- Code simple ou hash pour l'accès vendeuse
+  max_articles_par_cliente INT DEFAULT 1,
+  en_pause BOOLEAN DEFAULT false,
+  message_pause TEXT DEFAULT 'La boutique est actuellement fermée pour congés. Les réservations sont temporairement suspendues.',
+  message_annonce TEXT DEFAULT NULL;
+
+-- S'assurer que heure_fermeture_soir existe
+ALTER TABLE boutiques 
+ADD COLUMN IF NOT EXISTS heure_fermeture_soir TEXT DEFAULT '18h30';
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+
 
 -- 2. TABLE DES ARTICLES EN VITRINE
 CREATE TABLE articles (
@@ -18,13 +28,8 @@ CREATE TABLE articles (
   prix NUMERIC(6,2) NOT NULL,          -- ex: 45.00
   photo_url TEXT NOT NULL,             -- Lien vers l'image dans Supabase Storage
   
-  -- Statuts possibles : 'disponible', 'pre_reserve' (15 min), 'confirme' (jusqu'au soir), 'vendu'
+  -- Statuts possibles : 'disponible', 'confirme' (jusqu'au midi/soir), 'vendu'
   statut TEXT NOT NULL DEFAULT 'disponible',
-  
-  -- Gestion des expirations automatiques (Anti-fantôme & fin de journée)
-  pre_reserve_jusqua TIMESTAMPTZ,      -- Heure du clic + 15 minutes
-  reserve_jusqua TIMESTAMPTZ,          -- ex: Aujourd'hui à 18h00
-  
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -36,10 +41,10 @@ CREATE TABLE reservations (
   prenom_cliente TEXT NOT NULL,        -- ex: 'Julie'
   telephone_cliente TEXT,              -- Optionnel (pour la liste d'attente)
   canal TEXT DEFAULT 'sms',            -- 'sms' ou 'whatsapp'
-  
   -- Statuts : 'attente_sms', 'validee_cabine', 'liste_attente', 'honoree', 'annulee'
   statut TEXT NOT NULL DEFAULT 'attente_sms',
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  taille_souhaitee TEXT
 );
 
 --------------------
@@ -55,6 +60,11 @@ FROM boutiques WHERE slug = 'bisou-magique';
 INSERT INTO articles (boutique_id, titre, taille, prix, photo_url)
 SELECT id, 'Robe fleurie Printemps', 'T.36 / S', 29.00, 'https://images.unsplash.com/photo-1572804013309-59a88b7e92f1?w=600'
 FROM boutiques WHERE slug = 'bisou-magique';
+
+-- Exemple pour Bisou Magique (fermé dimanche=0 et lundi=1)
+UPDATE boutiques 
+SET jours_fermeture = '{0, 1}', heure_fermeture_soir = '18h30'
+WHERE slug = 'bisou-magique';
 
 -- Activer le RLS
 ALTER TABLE boutiques ENABLE ROW LEVEL SECURITY;

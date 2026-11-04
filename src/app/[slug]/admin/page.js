@@ -34,54 +34,62 @@ async function compresserPhoto(file) {
   });
 }
 
-// Détermine la date/heure exacte limite d'une réservation selon sa date de création
-function verifierEcheanceResa(dateCreationISO) {
+// Détermine la date/heure exacte limite d'une réservation selon sa date de création et en tenant compte du réglage boutique
+// Détermine l'échéance exacte avec date calendaire lisible
+function verifierEcheanceResa(dateCreationISO, heureClotureBoutique = "18h30") {
   if (!dateCreationISO) return { depassee: true, libelle: "Heure limite atteinte" };
 
   const dateResa = new Date(dateCreationISO);
-  // Heure locale française au moment de la réservation
+  // Conversion calée sur le fuseau horaire de Paris
   const dateResaFr = new Date(dateResa.toLocaleString("en-US", { timeZone: "Europe/Paris" }));
   const heure = dateResaFr.getHours();
-  const jour = dateResaFr.getDay(); // 0 = Dimanche, 1 = Lundi... 6 = Samedi
+  const jour = dateResaFr.getDay(); // 0 = Dimanche, 1 = Lundi, etc.
+
+  const [hStr, mStr] = (heureClotureBoutique || "18h30").toLowerCase().split("h");
+  const hCloture = parseInt(hStr, 10) || 18;
+  const mCloture = parseInt(mStr, 10) || 0;
 
   const dateEcheance = new Date(dateResaFr);
 
+  // 1. Réservé le matin (< 14h) en semaine d'ouverture : expire le jour même au soir
   if (heure < 14 && jour !== 0 && jour !== 1) {
-    // Réservé le matin : expire ce soir à 18h30
-    dateEcheance.setHours(18, 30, 0, 0);
-    return {
-      depassee: new Date() > dateEcheance,
-      libelle: "Aujourd'hui à 18h30",
-    };
+    dateEcheance.setHours(hCloture, mCloture, 0, 0);
   }
-
-  if (jour === 0 || (jour === 6 && heure >= 14)) {
-    // Samedi soir ou dimanche : expire mardi à 14h00
+  // 2. Samedi après-midi ou Dimanche : expire mardi à 14h00
+  else if (jour === 0 || (jour === 6 && heure >= 14)) {
     const joursRestants = jour === 0 ? 2 : 3;
     dateEcheance.setDate(dateEcheance.getDate() + joursRestants);
     dateEcheance.setHours(14, 0, 0, 0);
-    return {
-      depassee: new Date() > dateEcheance,
-      libelle: "Mardi à 14h00",
-    };
   }
-
-  if (jour === 1) {
-    // Lundi : expire mardi à 18h30
+  // 3. Lundi (fermeture) : expire mardi au soir
+  else if (jour === 1) {
     dateEcheance.setDate(dateEcheance.getDate() + 1);
-    dateEcheance.setHours(18, 30, 0, 0);
-    return {
-      depassee: new Date() > dateEcheance,
-      libelle: "Mardi à 18h30",
-    };
+    dateEcheance.setHours(hCloture, mCloture, 0, 0);
+  }
+  // 4. Après 14h ou soirée : expire le lendemain à 14h00
+  else {
+    dateEcheance.setDate(dateEcheance.getDate() + 1);
+    dateEcheance.setHours(14, 0, 0, 0);
   }
 
-  // Réservé l'après-midi ou le soir : expire le lendemain à 14h00
-  dateEcheance.setDate(dateEcheance.getDate() + 1);
-  dateEcheance.setHours(14, 0, 0, 0);
+  // Formatage de la date en français : "Mercredi 5 nov. à 14h00"
+  const optionsDate = {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    timeZone: "Europe/Paris"
+  };
+  const dateFormatee = dateEcheance.toLocaleDateString("fr-FR", optionsDate);
+  const hFin = dateEcheance.getHours().toString().padStart(2, "0");
+  const mFin = dateEcheance.getMinutes().toString().padStart(2, "0");
+
+  const maintenant = new Date();
+  const estDepassee = maintenant > dateEcheance;
+
   return {
-    depassee: new Date() > dateEcheance,
-    libelle: "Demain à 14h00",
+    depassee: estDepassee,
+    // Affiche par exemple : "mer. 4 nov. à 14h00 (Expiré)" ou "mer. 4 nov. à 14h00"
+    libelle: `${dateFormatee} à ${hFin}h${mFin}`,
   };
 }
 
@@ -91,6 +99,7 @@ function ContenuAdmin() {
   const [articles, setArticles] = useState([]);
   const [reservations, setReservations] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [maxArticles, setMaxArticles] = useState(1);
 
   // Protection simple par code PIN / mot de passe commerçante
   const [autorise, setAutorise] = useState(false);
@@ -106,8 +115,38 @@ function ContenuAdmin() {
   const [nouveauMdp, setNouveauMdp] = useState("");
   const [nouvelEmail, setNouvelEmail] = useState("");
 
+  const [heureSoir, setHeureSoir] = useState("18h30");
+  const [enPause, setEnPause] = useState(false);
+  const [messagePause, setMessagePause] = useState("");
+  const [messageAnnonce, setMessageAnnonce] = useState("");
+
   // Modale pour le Bilan / Clôture du soir
   const [modaleCloture, setModaleCloture] = useState(false);
+
+  // Les 7 jours de la semaine avec leur index JavaScript
+  const TOUS_LES_JOURS = [
+    { id: 1, label: "Lundi" },
+    { id: 2, label: "Mardi" },
+    { id: 3, label: "Mercredi" },
+    { id: 4, label: "Jeudi" },
+    { id: 5, label: "Vendredi" },
+    { id: 6, label: "Samedi" },
+    { id: 0, label: "Dimanche" },
+    ];
+
+  // État local pour stocker le tableau des jours cochés (ex: [0, 1])
+  const [joursFermeture, setJoursFermeture] = useState([0, 1]);
+
+  const basculerJourFermeture = (jourId) => {
+    setJoursFermeture((prev) =>
+      prev.includes(jourId)
+        ? prev.filter((j) => j !== jourId) // Décocher
+        : [...prev, jourId].sort()         // Cocher
+    );
+  };
+
+  //Onglet actif dans l'interface admin
+  const [ongletActif, setOngletActif] = useState("contact"); // "contact" ou "general"
 
   // Connexion automatique si le téléphone s'en souvient déjà
   useEffect(() => {
@@ -133,6 +172,7 @@ function ContenuAdmin() {
   const [modifFichierPhoto, setModifFichierPhoto] = useState(null);
   const [modifApercuPhoto, setModifApercuPhoto] = useState(null);
   const [sauvegardeEnCours, setSauvegardeEnCours] = useState(false);
+  const [afficherMdp, setAfficherMdp] = useState(false);
 
   // Chargement des données
   const chargerDonneesAdmin = async () => {
@@ -147,6 +187,16 @@ function ContenuAdmin() {
       setNouveauTel(dataBoutique.telephone_pro || "");
       setNouveauMdp(dataBoutique.mot_de_passe_admin || "");
       setNouvelEmail(dataBoutique.email || "");
+      setMaxArticles(dataBoutique.max_articles_par_cliente || 1);
+      setHeureSoir(dataBoutique.heure_fermeture_soir || "18h30");
+      setEnPause(dataBoutique.en_pause || false);
+      setMessagePause(dataBoutique.message_pause || "La boutique est actuellement fermée pour congés. Les réservations sont temporairement suspendues.");
+      setMessageAnnonce(dataBoutique.message_annonce || "");
+      setJoursFermeture(
+        Array.isArray(dataBoutique.jours_fermeture)
+          ? dataBoutique.jours_fermeture
+          : [0, 1]
+      );
 
       // Charger tous les articles (sauf les vendus archivés)
       const { data: dataArticles } = await supabase
@@ -241,7 +291,6 @@ function ContenuAdmin() {
       .from("articles")
       .update({
         statut: nouveauStatut,
-        pre_reserve_jusqua: null,
       })
       .eq("id", articleId);
 
@@ -264,7 +313,7 @@ function ContenuAdmin() {
 
     await supabase
       .from("articles")
-      .update({ statut: "disponible", pre_reserve_jusqua: null })
+      .update({ statut: "disponible"})
       .in("id", ids);
 
     await supabase
@@ -378,13 +427,19 @@ function ContenuAdmin() {
         telephone_pro: telFormate,
         mot_de_passe_admin: nouveauMdp.trim(),
         email: nouvelEmail.trim() || null,
+        max_articles_par_cliente: parseInt(maxArticles, 10) || 1,
+        heure_fermeture_soir: heureSoir,
+        en_pause: enPause,
+        message_pause: messagePause.trim(),
+        message_annonce: messageAnnonce.trim() || null,
+        jours_fermeture: joursFermeture,
       })
       .eq("id", boutique.id);
 
     if (error) {
       alert("Erreur lors de la mise à jour : " + error.message);
     } else {
-      alert("✅ Vos réglages (Téléphone, Email & Code) ont bien été enregistrés !");
+      alert("✅ Vos réglages ont bien été enregistrés !");
       setModaleReglages(false);
       await chargerDonneesAdmin();
     }
@@ -393,8 +448,7 @@ function ContenuAdmin() {
   // Articles actuellement réservés ou bloqués
   const articlesNonRetires = articles.filter(
     (a) =>
-      a.statut === "confirme" ||
-      (a.statut === "pre_reserve" && new Date(a.pre_reserve_jusqua) > new Date())
+      a.statut === "confirme"
   );
 
   if (loading) {
@@ -497,7 +551,7 @@ function ContenuAdmin() {
                 </label>
                 <input
                   type="text"
-                  placeholder="Nouveau code (ex: bisou2026)"
+                  placeholder="Ex: MonMotDePasse2026"
                   value={nouveauMdpOubli}
                   onChange={(e) => setNouveauMdpOubli(e.target.value)}
                   className="w-full border border-stone-300 rounded-xl px-3 py-2.5 text-center font-bold text-stone-900"
@@ -583,8 +637,7 @@ function ContenuAdmin() {
         {articles.map((article) => {
           const resa = reservations.find((r) => r.article_id === article.id);
           const estBloque =
-            article.statut === "confirme" ||
-            (article.statut === "pre_reserve" && new Date(article.pre_reserve_jusqua) > new Date());
+            article.statut === "confirme";
 
           return (
             <div
@@ -669,17 +722,17 @@ function ContenuAdmin() {
         })}
       </main>
 
-      {/* MODALE BILAN DU SOIR / CLÔTURE AVEC DISTINCTION ROUGE / EN COURS */}
+      {/* MODALE BILAN / CLÔTURE AVEC DISTINCTION ROUGE / EN COURS */}
       {modaleCloture && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b border-stone-100 pb-3">
               <div>
                 <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600">
-                  Fin de journée
+                  Bilan
                 </span>
                 <h3 className="text-lg font-bold text-stone-900">
-                  🌙 Bilan des pièces en attente
+                  🌙 Articles en attente
                 </h3>
               </div>
               <button
@@ -702,13 +755,16 @@ function ContenuAdmin() {
             ) : (
               <div className="space-y-3">
                 <p className="text-xs text-stone-600 leading-relaxed">
-                  Vérifiez le statut des pièces avant de fermer. Les pièces en <strong className="text-red-600">rouge</strong> doivent être remises en rayon :
+                  Vérifiez le statut des articles. Les pièces en <strong className="text-red-600">rouge</strong> doivent être remises en rayon :
                 </p>
 
                 <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
                   {articlesNonRetires.map((art) => {
                     const resa = reservations.find((r) => r.article_id === art.id);
-                    const echeance = verifierEcheanceResa(resa?.created_at);
+                    const echeance = verifierEcheanceResa(
+                      resa?.created_at, 
+                      boutique?.heure_fermeture_soir || "18h30"
+                    );
 
                     return (
                       <div
@@ -763,7 +819,10 @@ function ContenuAdmin() {
                 {(() => {
                   const expirés = articlesNonRetires.filter((art) => {
                     const resa = reservations.find((r) => r.article_id === art.id);
-                    return verifierEcheanceResa(resa?.created_at).depassee;
+                    return verifierEcheanceResa(
+                      resa?.created_at, 
+                      boutique?.heure_fermeture_soir || "18h30"
+                    ).depassee;
                   });
 
                   if (expirés.length === 0) return null;
@@ -1031,96 +1090,265 @@ function ContenuAdmin() {
         </div>
       )}
 
-      {/* MODALE DES RÉGLAGES */}
+      {/* MODALE DES RÉGLAGES AVEC ONGLETS */}
       {modaleReglages && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4">
           <form
             onSubmit={sauvegarderReglages}
-            className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl space-y-4"
+            className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl flex flex-col max-h-[90vh]"
           >
+            {/* 1. EN-TÊTE FIXE */}
             <div className="flex justify-between items-center border-b border-stone-100 pb-3">
               <div>
                 <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600">
-                  Paramètres de la boutique
+                  Configuration
                 </span>
                 <h3 className="text-lg font-bold text-stone-900">
-                  Contact & Sécurité
+                  Réglages de la boutique
                 </h3>
               </div>
               <button
                 type="button"
                 onClick={() => setModaleReglages(false)}
-                className="text-stone-400 font-bold text-xl px-2 cursor-pointer"
+                className="text-stone-400 hover:text-stone-700 font-bold text-xl px-2 cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-stone-700 mb-1">
-                📱 Numéro de réception (SMS & WhatsApp) :
-              </label>
-              <input
-                type="tel"
-                placeholder="Ex: 06 12 34 56 78 ou +33612345678"
-                value={nouveauTel}
-                onChange={(e) => setNouveauTel(e.target.value)}
-                required
-                className="w-full border border-stone-300 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-stone-900"
-              />
-              <p className="text-[11px] text-stone-400 mt-1">
-                Astuce : Les numéros commençant par 06 ou 07 sont convertis au format international +33.
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-stone-700 mb-1">
-                ✉️ Email de réception des alertes :
-              </label>
-              <input
-                type="email"
-                placeholder="Ex: contact@bisou-magique.fr"
-                value={nouvelEmail}
-                onChange={(e) => setNouvelEmail(e.target.value)}
-                className="w-full border border-stone-300 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-stone-900"
-              />
-              <p className="text-[11px] text-stone-400 mt-1">
-                C'est à cette adresse que la boutique recevra le récapitulatif de chaque réservation.
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-stone-700 mb-1">
-                🔑 Code secret vendeuse (Mot de passe Admin) :
-              </label>
-              <input
-                type="text"
-                placeholder="Ex: thonon74"
-                value={nouveauMdp}
-                onChange={(e) => setNouveauMdp(e.target.value)}
-                required
-                className="w-full border border-stone-300 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-stone-900"
-              />
-            </div>
-
-            <div className="pt-2 space-y-2">
-              <button
-                type="submit"
-                className="w-full bg-stone-900 text-white font-bold text-sm py-3.5 rounded-xl shadow-lg cursor-pointer"
-              >
-                💾 Enregistrer les modifications
-              </button>
-
+            {/* 2. BARRE D'ONGLETS */}
+            <div className="grid grid-cols-2 gap-1.5 p-1 bg-stone-100 rounded-xl my-3 text-xs font-bold">
               <button
                 type="button"
-                onClick={() => {
-                  localStorage.removeItem(`admin_auth_${slug}`);
-                  setAutorise(false);
-                  setModaleReglages(false);
-                }}
-                className="w-full bg-red-50 text-red-600 font-semibold text-xs py-2.5 rounded-xl cursor-pointer"
+                onClick={() => setOngletActif("contact")}
+                className={`py-2 rounded-lg transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                  ongletActif === "contact"
+                    ? "bg-white text-stone-900 shadow-xs"
+                    : "text-stone-500 hover:text-stone-800"
+                }`}
               >
-                🔒 Déconnecter cet appareil
+                <span>🔐</span> Contact & Sécurité
+              </button>
+              <button
+                type="button"
+                onClick={() => setOngletActif("general")}
+                className={`py-2 rounded-lg transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                  ongletActif === "general"
+                    ? "bg-white text-stone-900 shadow-xs"
+                    : "text-stone-500 hover:text-stone-800"
+                }`}
+              >
+                <span>⚙️</span> Paramètres généraux
+              </button>
+            </div>
+
+            {/* 3. CONTENU DÉFILABLE SELON L'ONGLET */}
+            <div className="overflow-y-auto pr-1 space-y-4 flex-1">
+              {/* ================= ONGLET 1 : CONTACT & SÉCURITÉ ================= */}
+              {ongletActif === "contact" && (
+                <div className="space-y-3.5">
+                  <div>
+                    <label className="block text-xs font-bold text-stone-700 mb-1">
+                      📱 Numéro de réception (SMS & WhatsApp) :
+                    </label>
+                    <input
+                      type="tel"
+                      placeholder="Ex: 06 12 34 56 78"
+                      value={nouveauTel}
+                      onChange={(e) => setNouveauTel(e.target.value)}
+                      required
+                      className="w-full border border-stone-300 rounded-xl px-3.5 py-2 text-sm font-semibold text-stone-900"
+                    />
+                    <p className="text-[11px] text-stone-400 mt-1">
+                      Les numéros 06 ou 07 sont convertis au format international +33.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-stone-700 mb-1">
+                      ✉️ Email de réception des alertes :
+                    </label>
+                    <input
+                      type="email"
+                      placeholder="Ex: contact@bisou-magique.fr"
+                      value={nouvelEmail}
+                      onChange={(e) => setNouvelEmail(e.target.value)}
+                      className="w-full border border-stone-300 rounded-xl px-3.5 py-2 text-sm font-semibold text-stone-900"
+                    />
+                  </div>
+
+                  {/* CODE SECRET VENDEUSE (ALIGNEMENT FLEX ANTI-DÉBORDEMENT) */}
+                  <div>
+                    <label className="block text-xs font-bold text-stone-700 mb-1">
+                      🔑 Code secret vendeuse (Mot de passe Admin) :
+                    </label>
+                    
+                    <div className="flex items-center border border-stone-300 rounded-xl px-3.5 py-2 bg-white focus-within:ring-2 focus-within:ring-stone-900 focus-within:border-transparent">
+                      <input
+                        type={afficherMdp ? "text" : "password"}
+                        placeholder="••••••••"
+                        value={nouveauMdp}
+                        onChange={(e) => setNouveauMdp(e.target.value)}
+                        required
+                        className="w-full text-sm font-semibold text-stone-900 outline-none bg-transparent"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setAfficherMdp(!afficherMdp)}
+                        className="ml-2 text-base cursor-pointer select-none shrink-0 opacity-75 hover:opacity-100 transition"
+                        title={afficherMdp ? "Masquer le code" : "Afficher le code"}
+                      >
+                        {afficherMdp ? (
+                          /* Icône Œil barré */
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-5 h-5">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+                          </svg>
+                        ) : (
+                          /* Icône Œil ouvert */
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-5 h-5">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          </svg>
+                        )}
+                      </button>
+                    </div>
+
+                    <p className="text-[11px] text-stone-400 mt-1">
+                      Ce code permet d'accéder au panneau d'administration de la boutique.
+                    </p>
+                  </div>
+
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        localStorage.removeItem(`admin_auth_${slug}`);
+                        setAutorise(false);
+                        setModaleReglages(false);
+                      }}
+                      className="w-full bg-red-50 text-red-600 font-semibold text-xs py-2.5 rounded-xl cursor-pointer hover:bg-red-100 transition"
+                    >
+                      🔒 Déconnecter cet appareil
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ================= ONGLET 2 : PARAMÈTRES GÉNÉRAUX ================= */}
+              {ongletActif === "general" && (
+                <div className="space-y-3.5">
+                  {/* Annonce vitrine */}
+                  <div>
+                    <label className="block text-xs font-bold text-stone-700 mb-1">
+                      📣 Annonce vitrine (Optionnel) :
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ex: Arrivage cachemire ce jeudi !"
+                      value={messageAnnonce}
+                      onChange={(e) => setMessageAnnonce(e.target.value)}
+                      className="w-full border border-stone-300 rounded-xl px-3.5 py-2 text-sm text-stone-900"
+                    />
+                  </div>
+
+                  {/* Quota par cliente */}
+                  <div>
+                    <label className="block text-xs font-bold text-stone-700 mb-1">
+                      🛡️ Réservations simultanées par cliente :
+                    </label>
+                    <select
+                      value={maxArticles}
+                      onChange={(e) => setMaxArticles(Number(e.target.value))}
+                      className="w-full border border-stone-300 rounded-xl px-3.5 py-2 text-sm font-semibold text-stone-900 bg-white"
+                    >
+                      <option value={1}>1 article max à la fois (Recommandé)</option>
+                      <option value={2}>2 articles max à la fois</option>
+                      <option value={3}>3 articles max à la fois</option>
+                    </select>
+                  </div>
+
+                  {/* Heure limite le soir */}
+                  <div>
+                    <label className="block text-xs font-bold text-stone-700 mb-1">
+                      🕒 Heure limite de réservation le soir :
+                    </label>
+                    <select
+                      value={heureSoir}
+                      onChange={(e) => setHeureSoir(e.target.value)}
+                      className="w-full border border-stone-300 rounded-xl px-3.5 py-2 text-sm font-semibold text-stone-900 bg-white"
+                    >
+                      <option value="18h00">18h00</option>
+                      <option value="18h30">18h30</option>
+                      <option value="19h00">19h00</option>
+                      <option value="19h30">19h30</option>
+                    </select>
+                  </div>
+
+                  {/* Jours de fermeture */}
+                  <div>
+                    <label className="block text-xs font-bold text-stone-700 mb-1">
+                      📅 Jours habituels de fermeture :
+                    </label>
+                    <div className="grid grid-cols-2 gap-1.5 pt-1">
+                      {TOUS_LES_JOURS.map((jour) => {
+                        const estCoche = joursFermeture.includes(jour.id);
+                        return (
+                          <label
+                            key={jour.id}
+                            className={`flex items-center gap-2 p-1.5 rounded-lg border text-xs cursor-pointer select-none ${
+                              estCoche
+                                ? "bg-amber-50 border-amber-300 text-amber-950 font-semibold"
+                                : "bg-white border-stone-200 text-stone-600"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={estCoche}
+                              onChange={() => basculerJourFermeture(jour.id)}
+                              className="w-3.5 h-3.5 accent-amber-500 rounded"
+                            />
+                            {jour.label}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Mode Congés */}
+                  <div className="border-t border-stone-100 pt-2 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
+                        <span>🏖️</span> Mode Congés / Pause
+                      </label>
+                      <input
+                        type="checkbox"
+                        checked={enPause}
+                        onChange={(e) => setEnPause(e.target.checked)}
+                        className="w-4 h-4 accent-amber-500 rounded cursor-pointer"
+                      />
+                    </div>
+
+                    {enPause && (
+                      <textarea
+                        rows={2}
+                        value={messagePause}
+                        onChange={(e) => setMessagePause(e.target.value)}
+                        placeholder="Message affiché aux clientes..."
+                        className="w-full border border-stone-300 rounded-xl p-2 text-xs text-stone-900"
+                      />
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 4. BOUTON D'ENREGISTREMENT FIXE TOUT EN BAS */}
+            <div className="pt-3 border-t border-stone-100 mt-2">
+              <button
+                type="submit"
+                className="w-full bg-stone-900 hover:bg-stone-800 text-white font-bold text-sm py-3 rounded-xl shadow-md cursor-pointer transition active:scale-98"
+              >
+                💾 Enregistrer les modifications
               </button>
             </div>
           </form>

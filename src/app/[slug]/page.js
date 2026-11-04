@@ -4,6 +4,33 @@ import { useEffect, useState, Suspense } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
+  function calculerDelaiAffichage(dateCreationISO, heureCloture = "19h00") {
+    if (!dateCreationISO) return heureCloture;
+
+    const dateResa = new Date(dateCreationISO);
+    const dateResaFr = new Date(dateResa.toLocaleString("en-US", { timeZone: "Europe/Paris" }));
+    const heure = dateResaFr.getHours();
+    const jour = dateResaFr.getDay();
+
+    // 1. Réservé le matin (< 14h) du mardi au samedi
+    if (heure < 14 && jour !== 0 && jour !== 1) {
+      return `ce soir ${heureCloture}`;
+    }
+
+    // 2. Samedi après 14h ou Dimanche
+    if (jour === 0 || (jour === 6 && heure >= 14)) {
+      return "mardi 14h00";
+    }
+
+    // 3. Lundi (fermeture)
+    if (jour === 1) {
+      return `mardi ${heureCloture}`;
+    }
+
+    // 4. Après 14h en semaine (ex: 15h35)
+    return "demain 14h00";
+  }
+
 function ContenuVitrine() {
   const { slug } = useParams();
   const [boutique, setBoutique] = useState(null);
@@ -22,7 +49,10 @@ function ContenuVitrine() {
   // Modale du ticket de réservation
   const [ticketConfirmation, setTicketConfirmation] = useState(null);
 
-  // Chargement des données
+  // 1. Déclarer l'état pour les réservations en haut du composant :
+  const [reservations, setReservations] = useState([]);
+
+  // 2. Dans chargerBoutiqueEtArticles :
   const chargerBoutiqueEtArticles = async () => {
     const { data: dataBoutique } = await supabase
       .from("boutiques")
@@ -41,6 +71,19 @@ function ContenuVitrine() {
         .order("created_at", { ascending: false });
 
       setArticles(dataArticles || []);
+
+      // 👉 Récupérer les réservations associées pour calculer l'échéance exacte
+      if (dataArticles && dataArticles.length > 0) {
+        const idsArticles = dataArticles.map((a) => a.id);
+        const { data: dataResas } = await supabase
+          .from("reservations")
+          .select("*")
+          .in("article_id", idsArticles)
+          .neq("statut", "annulee")
+          .order("created_at", { ascending: false });
+
+        setReservations(dataResas || []);
+      }
     }
     setLoading(false);
   };
@@ -52,8 +95,16 @@ function ContenuVitrine() {
 
   // Envoi de la réservation
   const lancerReservation = async (canal) => {
-    if (!prenom.trim() || !telephone.trim()) {
-      alert("Merci d'indiquer votre prénom et votre numéro de mobile 😊");
+    const telNettoye = telephone.replace(/[\s.-]/g, "");
+    const regexMobileFr = /^0[67]\d{8}$/;
+
+    if (!prenom.trim()) {
+      alert("Merci d'indiquer votre prénom 😊");
+      return;
+    }
+
+    if (!regexMobileFr.test(telNettoye)) {
+      alert("Merci d'indiquer un numéro de portable valide (commençant par 06 ou 07)");
       return;
     }
 
@@ -66,7 +117,7 @@ function ContenuVitrine() {
         body: JSON.stringify({
           article_id: articleSelectionne.id,
           prenom: prenom.trim(),
-          telephone: telephone.trim(),
+          telephone: telNettoye,
           canal: canal,
         }),
       });
@@ -84,7 +135,7 @@ function ContenuVitrine() {
       );
 
       const telPro = boutique.telephone_pro || "";
-      const texte = `Bonjour ${boutique.nom} ! C'est ${prenom} (${telephone}). Je souhaite mettre de côté : "${articleSelectionne.titre}" (${articleSelectionne.taille} - ${articleSelectionne.prix} €) jusqu'à ${heureFin} (Réf: #${codeResa}).`;
+      const texte = `Bonjour ${boutique.nom} ! C'est ${prenom} (${telNettoye}). Je souhaite mettre de côté : "${articleSelectionne.titre}" (${articleSelectionne.taille} - ${formaterPrix(articleSelectionne.prix)} €) jusqu'à ${heureFin} (Réf: #${codeResa}).`;
       const texteEncode = encodeURIComponent(texte);
 
       const lienAction =
@@ -145,6 +196,28 @@ function ContenuVitrine() {
         </div>
       </header>
 
+      {/* BANDEAU D'ANNONCE VITRINE */}
+      {boutique?.message_annonce && (
+        <div className="max-w-md mx-auto mt-3 mx-3 px-4 py-2.5 bg-stone-900 text-white rounded-2xl text-center shadow-xs flex items-center justify-center gap-2">
+          <span className="text-sm">📣</span>
+          <p className="text-xs font-medium text-stone-100 leading-snug">
+            {boutique.message_annonce}
+          </p>
+        </div>
+      )}
+
+      {/* BANDEAU MODE CONGÉS */}
+      {boutique?.en_pause && (
+        <div className="max-w-md mx-auto mt-3 mx-3 p-3 bg-amber-50 border border-amber-300 rounded-2xl text-center space-y-1">
+          <p className="text-xs font-bold text-amber-900 flex items-center justify-center gap-1.5">
+            <span>🏖️</span> Boutique en pause
+          </p>
+          <p className="text-[11px] text-amber-800 leading-snug">
+            {boutique.message_pause || "Les réservations sont temporairement suspendues."}
+          </p>
+        </div>
+      )}
+
       {/* GRILLE DES ARTICLES */}
       <main className="max-w-md mx-auto px-3 pt-4">
         {articles.length === 0 ? (
@@ -154,10 +227,7 @@ function ContenuVitrine() {
         ) : (
           <div className="grid grid-cols-2 gap-3">
             {articles.map((article) => {
-              const estReserve =
-                article.statut === "confirme" ||
-                (article.statut === "pre_reserve" &&
-                  new Date(article.pre_reserve_jusqua) > new Date());
+              const estDisponible = article.statut === "disponible";
 
               return (
                 <div
@@ -181,16 +251,16 @@ function ContenuVitrine() {
                       {article.taille}
                     </span>
 
-                    {/* Icône discrète loupe */}
+                    {/* Icône loupe */}
                     <span className="absolute bottom-2 right-2 bg-white/80 backdrop-blur-xs text-stone-700 w-6 h-6 rounded-full flex items-center justify-center text-xs shadow-xs opacity-75 group-hover:opacity-100 transition">
                       🔍
                     </span>
 
                     {/* Voile si réservé */}
-                    {estReserve && (
+                    {!estDisponible && (
                       <div className="absolute inset-0 bg-stone-900/70 backdrop-blur-xs flex items-center justify-center p-3 text-center">
                         <span className="bg-amber-400 text-stone-950 font-black text-xs uppercase px-2.5 py-1.5 rounded-xl shadow-md">
-                          Déjà en cabine 🔒
+                          Déjà réservé 🔒
                         </span>
                       </div>
                     )}
@@ -199,7 +269,6 @@ function ContenuVitrine() {
                   {/* ZONE INFOS : TITRE SUR 2 LIGNES + PRIX */}
                   <div className="p-3 flex-1 flex flex-col justify-between">
                     <div>
-                      {/* Affichage sur 2 lignes maximum avec line-clamp-2 */}
                       <h3
                         onClick={() => setArticleApercu(article)}
                         className="font-bold text-stone-900 text-sm leading-snug line-clamp-2 min-h-[2.5rem] cursor-pointer hover:text-amber-700 transition"
@@ -208,26 +277,41 @@ function ContenuVitrine() {
                         {article.titre}
                       </h3>
                       <p className="font-extrabold text-stone-950 text-base mt-1">
-                        {article.prix} €
+                        {formaterPrix(article.prix)} €
                       </p>
                     </div>
 
                     {/* BOUTON D'ACTION */}
                     <div className="mt-3">
-                      {estReserve ? (
+                      {estDisponible ? (
                         <button
-                          disabled
-                          className="w-full bg-stone-100 text-stone-400 font-bold text-xs py-2.5 rounded-xl cursor-not-allowed"
+                          disabled={boutique?.en_pause}
+                          onClick={() => !boutique?.en_pause && setArticleSelectionne(article)}
+                          className={`w-full text-xs font-semibold py-2.5 px-3 rounded-xl shadow-xs transition ${
+                            boutique?.en_pause
+                              ? "bg-stone-200 text-stone-400 cursor-not-allowed"
+                              : "bg-stone-900 hover:bg-stone-800 text-white active:scale-95 cursor-pointer"
+                          }`}
                         >
-                          Mis de côté
+                          {boutique?.en_pause ? "Réservations en pause" : "Mettre de côté"}
                         </button>
                       ) : (
-                        <button
-                          onClick={() => setArticleSelectionne(article)}
-                          className="w-full bg-stone-900 hover:bg-stone-800 active:scale-97 transition text-white font-bold text-xs py-2.5 rounded-xl shadow-xs cursor-pointer"
-                        >
-                          Mettre de côté (24h)
-                        </button>
+                        (() => {
+                          const resa = reservations.find((r) => r.article_id === article.id);
+                          const delaiTexte = calculerDelaiAffichage(
+                            resa?.created_at,
+                            boutique?.heure_fermeture_soir || "19h00"
+                          );
+
+                          return (
+                            <button
+                              disabled
+                              className="w-full bg-stone-100 text-stone-500 font-semibold text-xs py-2.5 px-3 rounded-xl cursor-not-allowed"
+                            >
+                              🔒 Réservé ({delaiTexte})
+                            </button>
+                          );
+                        })()
                       )}
                     </div>
                   </div>
@@ -238,7 +322,7 @@ function ContenuVitrine() {
         )}
       </main>
 
-      {/* 1. MODALE ZOOM / GRAND FORMAT (CLIC EN FOND POUR REVENIR À LA VITRINE) */}
+      {/* 1. MODALE ZOOM / GRAND FORMAT */}
       {articleApercu && (
         <div
           onClick={() => setArticleApercu(null)}
@@ -248,7 +332,6 @@ function ContenuVitrine() {
             onClick={(e) => e.stopPropagation()}
             className="bg-white w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl relative max-h-[90vh] flex flex-col"
           >
-            {/* Bouton Fermer */}
             <button
               onClick={() => setArticleApercu(null)}
               className="absolute top-3 right-3 z-10 bg-stone-900/70 hover:bg-stone-900 text-white w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shadow-md cursor-pointer transition"
@@ -257,7 +340,6 @@ function ContenuVitrine() {
               ✕
             </button>
 
-            {/* Photo Agrandie */}
             <div className="relative aspect-3/4 bg-stone-100 overflow-hidden">
               <img
                 src={articleApercu.photo_url}
@@ -269,13 +351,12 @@ function ContenuVitrine() {
               </span>
             </div>
 
-            {/* Détails complets sans coupure */}
             <div className="p-5 overflow-y-auto">
               <h2 className="text-lg font-black text-stone-900 leading-tight">
                 {articleApercu.titre}
               </h2>
               <p className="text-xl font-extrabold text-amber-600 mt-1">
-                {articleApercu.prix} €
+                {formaterPrix(articleApercu.prix)} €
               </p>
 
               <div className="mt-4 pt-3 border-t border-stone-100 flex gap-2">
@@ -286,7 +367,7 @@ function ContenuVitrine() {
                   ← Retour vitrine
                 </button>
 
-                {articleApercu.statut === "disponible" && (
+                {articleApercu.statut === "disponible" && !boutique?.en_pause && (
                   <button
                     onClick={() => {
                       const cible = articleApercu;
@@ -340,10 +421,10 @@ function ContenuVitrine() {
               />
               <div className="text-xs">
                 <p className="font-bold text-stone-900">
-                  {articleSelectionne.taille} • {articleSelectionne.prix} €
+                  {articleSelectionne.taille} • {formaterPrix(articleSelectionne.prix)} €
                 </p>
                 <p className="text-stone-500">
-                  Mise de côté gratuite jusqu'à demain.
+                  Mise de côté en cabine jusqu'à la fermeture ({boutique?.heure_fermeture_soir || "18h30"}).
                 </p>
               </div>
             </div>
@@ -418,7 +499,7 @@ function ContenuVitrine() {
               Réservation confirmée
             </h3>
             <p className="text-xs text-stone-500 mb-4">
-              Votre pièce est gardée en cabine chez <strong>{boutique.nom}</strong>.
+              Votre pièce est réservée chez <strong>{boutique.nom}</strong>.
             </p>
 
             <div className="bg-stone-50 border border-stone-200 rounded-2xl p-4 mb-4 text-left space-y-1.5">
@@ -432,7 +513,7 @@ function ContenuVitrine() {
                 👗 {ticketConfirmation.titre} ({ticketConfirmation.taille})
               </p>
               <p className="text-xs text-stone-600">
-                💰 {ticketConfirmation.prix} € (à régler sur place)
+                💰 {formaterPrix(ticketConfirmation.prix)} € (à régler sur place)
               </p>
               <p className="text-xs text-amber-700 font-medium">
                 ⏳ Bloqué jusqu'à <strong>{ticketConfirmation.heureFin}</strong>
@@ -462,6 +543,15 @@ function ContenuVitrine() {
       )}
     </div>
   );
+}
+
+export function formaterPrix(prix) {
+  if (prix === null || prix === undefined || prix === "") return "";
+  
+  const nombre = Number(prix);
+  if (isNaN(nombre)) return prix;
+
+  return nombre % 1 !== 0 ? nombre.toFixed(2) : nombre.toString();
 }
 
 export default function PageVitrine() {
