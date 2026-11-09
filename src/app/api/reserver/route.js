@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { Resend } from 'resend';
 
 const NOMS_JOURS = ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"];
@@ -53,10 +53,11 @@ export async function POST(request) {
     }
 
     // 2. Récupérer l'article et les réglages de la boutique (dont max_articles_par_cliente)
-    const { data: article, error: updateError } = await supabase
+    const { data: article, error: updateError } = await supabaseAdmin
       .from('articles')
       .update({ statut: 'confirme' })
       .eq('id', article_id)
+      .eq('statut', 'disponible') // Empêche la réservation si déjà pris
       .select('titre, taille, prix, boutiques(id, nom, email, telephone_pro, jours_fermeture, heure_fermeture_soir, max_articles_par_cliente)')
       .single();
 
@@ -74,7 +75,7 @@ export async function POST(request) {
     // Après avoir récupéré `article` et `boutique` :
     if (boutique?.en_pause) {
       // On remet l'article en disponible si besoin
-      await supabase
+      await supabaseAdmin
         .from('articles')
         .update({ statut: 'disponible' })
         .eq('id', article_id);
@@ -88,7 +89,7 @@ export async function POST(request) {
     }
 
     // 3. Contrôle du quota dynamique par numéro de téléphone pour cette boutique
-    const { data: resasEnCours, error: verifError } = await supabase
+    const { data: resasEnCours, error: verifError } = await supabaseAdmin
       .from('reservations')
       .select('id, article_id, articles!inner(boutique_id)')
       .eq('telephone_cliente', telNettoye)
@@ -101,7 +102,7 @@ export async function POST(request) {
 
     if (resasEnCours && resasEnCours.length >= limiteMax) {
       // Si la limite est atteinte, on remet l'article en disponible pour ne pas le bloquer par erreur
-      await supabase
+      await supabaseAdmin
         .from('articles')
         .update({ statut: 'disponible' })
         .eq('id', article_id);
@@ -121,7 +122,7 @@ export async function POST(request) {
     );
 
     // 4. Création de la réservation
-    const { error: insertError } = await supabase.from('reservations').insert({
+    const { error: insertError } = await supabaseAdmin.from('reservations').insert({
       code_resa: codeResa,
       article_id,
       prenom_cliente: prenom.trim(),

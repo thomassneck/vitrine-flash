@@ -34,16 +34,14 @@ async function compresserPhoto(file) {
   });
 }
 
-// Détermine la date/heure exacte limite d'une réservation selon sa date de création et en tenant compte du réglage boutique
 // Détermine l'échéance exacte avec date calendaire lisible
 function verifierEcheanceResa(dateCreationISO, heureClotureBoutique = "18h30") {
   if (!dateCreationISO) return { depassee: true, libelle: "Heure limite atteinte" };
 
   const dateResa = new Date(dateCreationISO);
-  // Conversion calée sur le fuseau horaire de Paris
   const dateResaFr = new Date(dateResa.toLocaleString("en-US", { timeZone: "Europe/Paris" }));
   const heure = dateResaFr.getHours();
-  const jour = dateResaFr.getDay(); // 0 = Dimanche, 1 = Lundi, etc.
+  const jour = dateResaFr.getDay();
 
   const [hStr, mStr] = (heureClotureBoutique || "18h30").toLowerCase().split("h");
   const hCloture = parseInt(hStr, 10) || 18;
@@ -72,12 +70,11 @@ function verifierEcheanceResa(dateCreationISO, heureClotureBoutique = "18h30") {
     dateEcheance.setHours(14, 0, 0, 0);
   }
 
-  // Formatage de la date en français : "Mercredi 5 nov. à 14h00"
   const optionsDate = {
     weekday: "short",
     day: "numeric",
     month: "short",
-    timeZone: "Europe/Paris"
+    timeZone: "Europe/Paris",
   };
   const dateFormatee = dateEcheance.toLocaleDateString("fr-FR", optionsDate);
   const hFin = dateEcheance.getHours().toString().padStart(2, "0");
@@ -88,7 +85,6 @@ function verifierEcheanceResa(dateCreationISO, heureClotureBoutique = "18h30") {
 
   return {
     depassee: estDepassee,
-    // Affiche par exemple : "mer. 4 nov. à 14h00 (Expiré)" ou "mer. 4 nov. à 14h00"
     libelle: `${dateFormatee} à ${hFin}h${mFin}`,
   };
 }
@@ -101,11 +97,11 @@ function ContenuAdmin() {
   const [loading, setLoading] = useState(true);
   const [maxArticles, setMaxArticles] = useState(1);
 
-  // Protection simple par code PIN / mot de passe commerçante
+  // Authentification sécurisée par cookie de session
   const [autorise, setAutorise] = useState(false);
   const [motDePasseSaisi, setMotDePasseSaisi] = useState("");
 
-  // États pour Mot de passe oublié & Réglages (Code + Téléphone + Email)
+  // États pour Mot de passe oublié & Réglages
   const [modeOubli, setModeOubli] = useState(false);
   const [quatreChiffres, setQuatreChiffres] = useState("");
   const [nouveauMdpOubli, setNouveauMdpOubli] = useState("");
@@ -123,7 +119,7 @@ function ContenuAdmin() {
   // Modale pour le Bilan / Clôture du soir
   const [modaleCloture, setModaleCloture] = useState(false);
 
-  // Les 7 jours de la semaine avec leur index JavaScript
+  // Les 7 jours de la semaine
   const TOUS_LES_JOURS = [
     { id: 1, label: "Lundi" },
     { id: 2, label: "Mardi" },
@@ -132,30 +128,19 @@ function ContenuAdmin() {
     { id: 5, label: "Vendredi" },
     { id: 6, label: "Samedi" },
     { id: 0, label: "Dimanche" },
-    ];
+  ];
 
-  // État local pour stocker le tableau des jours cochés (ex: [0, 1])
   const [joursFermeture, setJoursFermeture] = useState([0, 1]);
 
   const basculerJourFermeture = (jourId) => {
     setJoursFermeture((prev) =>
-      prev.includes(jourId)
-        ? prev.filter((j) => j !== jourId) // Décocher
-        : [...prev, jourId].sort()         // Cocher
+      prev.includes(jourId) ? prev.filter((j) => j !== jourId) : [...prev, jourId].sort()
     );
   };
 
-  //Onglet actif dans l'interface admin
-  const [ongletActif, setOngletActif] = useState("contact"); // "contact" ou "general"
+  const [ongletActif, setOngletActif] = useState("contact");
 
-  // Connexion automatique si le téléphone s'en souvient déjà
-  useEffect(() => {
-    if (slug && localStorage.getItem(`admin_auth_${slug}`) === "true") {
-      setAutorise(true);
-    }
-  }, [slug]);
-
-  // États du formulaire d'ajout express
+  // Formulaire d'ajout
   const [modaleAjout, setModaleAjout] = useState(false);
   const [titre, setTitre] = useState("");
   const [prix, setPrix] = useState("");
@@ -164,7 +149,7 @@ function ContenuAdmin() {
   const [apercuPhoto, setApercuPhoto] = useState(null);
   const [publicationEnCours, setPublicationEnCours] = useState(false);
 
-  // États pour la modale de modification d'article
+  // Formulaire de modification
   const [articleEnModif, setArticleEnModif] = useState(null);
   const [modifTitre, setModifTitre] = useState("");
   const [modifPrix, setModifPrix] = useState("");
@@ -174,31 +159,44 @@ function ContenuAdmin() {
   const [sauvegardeEnCours, setSauvegardeEnCours] = useState(false);
   const [afficherMdp, setAfficherMdp] = useState(false);
 
-  // Chargement des données
+  // Vérification de la session sécurisée au chargement
+  useEffect(() => {
+    if (!slug) return;
+    fetch(`/api/auth/check?slug=${slug}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.autorise) {
+          setAutorise(true);
+        }
+      })
+      .catch((err) => console.error("Erreur vérification session :", err));
+  }, [slug]);
+
+  // Chargement des données sans exposer mot_de_passe_admin
   const chargerDonneesAdmin = async () => {
     const { data: dataBoutique } = await supabase
       .from("boutiques")
-      .select("*")
+      .select("id, slug, nom, telephone_pro, email, max_articles_par_cliente, heure_fermeture_soir, en_pause, message_pause, message_annonce, jours_fermeture")
       .eq("slug", slug)
       .maybeSingle();
 
     if (dataBoutique) {
       setBoutique(dataBoutique);
       setNouveauTel(dataBoutique.telephone_pro || "");
-      setNouveauMdp(dataBoutique.mot_de_passe_admin || "");
+      setNouveauMdp(""); // Laissé vide par sécurité
       setNouvelEmail(dataBoutique.email || "");
       setMaxArticles(dataBoutique.max_articles_par_cliente || 1);
       setHeureSoir(dataBoutique.heure_fermeture_soir || "18h30");
       setEnPause(dataBoutique.en_pause || false);
-      setMessagePause(dataBoutique.message_pause || "La boutique est actuellement fermée pour congés. Les réservations sont temporairement suspendues.");
+      setMessagePause(
+        dataBoutique.message_pause ||
+          "La boutique est actuellement fermée pour congés. Les réservations sont temporairement suspendues."
+      );
       setMessageAnnonce(dataBoutique.message_annonce || "");
       setJoursFermeture(
-        Array.isArray(dataBoutique.jours_fermeture)
-          ? dataBoutique.jours_fermeture
-          : [0, 1]
+        Array.isArray(dataBoutique.jours_fermeture) ? dataBoutique.jours_fermeture : [0, 1]
       );
 
-      // Charger tous les articles (sauf les vendus archivés)
       const { data: dataArticles } = await supabase
         .from("articles")
         .select("*")
@@ -208,7 +206,6 @@ function ContenuAdmin() {
 
       setArticles(dataArticles || []);
 
-      // Charger les réservations associées
       if (dataArticles && dataArticles.length > 0) {
         const idsArticles = dataArticles.map((a) => a.id);
         const { data: dataResa } = await supabase
@@ -229,7 +226,6 @@ function ContenuAdmin() {
     chargerDonneesAdmin();
   }, [slug]);
 
-  // Sélection de la photo pour l'ajout
   const gererSelectionPhoto = (e) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -238,7 +234,83 @@ function ContenuAdmin() {
     }
   };
 
-  // 1. Publier un nouvel article en vitrine
+  // 1. Connexion via route API sécurisée (pose du cookie httpOnly)
+  const connecterAdmin = async () => {
+    if (!motDePasseSaisi.trim()) {
+      alert("Veuillez saisir votre code d'accès.");
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug, motDePasse: motDePasseSaisi }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Code incorrect");
+
+      setAutorise(true);
+      await chargerDonneesAdmin();
+    } catch (err) {
+      alert("Erreur de connexion : " + err.message);
+    }
+  };
+
+  // 2. Déconnexion via route API
+  const deconnecterAdmin = async () => {
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug }),
+      });
+    } finally {
+      localStorage.removeItem(`admin_auth_${slug}`);
+      localStorage.removeItem(`admin_pwd_${slug}`);
+      setAutorise(false);
+      setMotDePasseSaisi("");
+      setModaleReglages(false);
+    }
+  };
+
+  // 3. Réinitialisation sécurisée du mot de passe côté serveur
+  const reinitialiserMotDePasse = async () => {
+    if (quatreChiffres.trim().length !== 4) {
+      alert("❌ Merci d'entrer les 4 derniers chiffres du numéro de téléphone.");
+      return;
+    }
+    if (!nouveauMdpOubli.trim()) {
+      alert("Merci de choisir votre nouveau code secret.");
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/boutiques/reinitialiser-mdp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          slug,
+          quatreChiffres: quatreChiffres.trim(),
+          nouveauMotDePasse: nouveauMdpOubli.trim(),
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erreur de réinitialisation");
+
+      alert("✅ Votre nouveau code secret est enregistré !");
+      setModeOubli(false);
+      setMotDePasseSaisi(nouveauMdpOubli.trim());
+      setAutorise(true);
+      await chargerDonneesAdmin();
+    } catch (err) {
+      alert("❌ " + err.message);
+    }
+  };
+
+  // 4. Ajouter un article via route API sécurisée
   const ajouterArticle = async (e) => {
     e.preventDefault();
     if (!fichierPhoto || !titre || !prix) {
@@ -262,14 +334,23 @@ function ContenuAdmin() {
         .from("photos-vitrine")
         .getPublicUrl(cheminFichier);
 
-      await supabase.from("articles").insert({
-        boutique_id: boutique.id,
-        titre: titre.trim(),
-        taille: taille.trim(),
-        prix: parseFloat(prix),
-        photo_url: urlData.publicUrl,
-        statut: "disponible",
+      const response = await fetch("/api/articles/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          boutiqueId: boutique.id,
+          motDePasse: motDePasseSaisi,
+          titre: titre.trim(),
+          taille: taille.trim(),
+          prix: parseFloat(prix),
+          imageUrl: urlData.publicUrl,
+        }),
       });
+
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || "Erreur lors de la création de l'article");
+      }
 
       setTitre("");
       setPrix("");
@@ -285,62 +366,83 @@ function ContenuAdmin() {
     }
   };
 
-  // 2. Changer le statut d'un article
+  // 5. Changer le statut d'un article via route API sécurisée
   const changerStatutArticle = async (articleId, nouveauStatut) => {
-    await supabase
-      .from("articles")
-      .update({
-        statut: nouveauStatut,
-      })
-      .eq("id", articleId);
+    try {
+      const res = await fetch("/api/articles/statut", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          articleId,
+          nouveauStatut,
+          slug,
+        }),
+      });
 
-    if (nouveauStatut === "disponible") {
-      await supabase
-        .from("reservations")
-        .update({ statut: "annulee" })
-        .eq("article_id", articleId);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erreur lors du changement de statut");
+
+      await chargerDonneesAdmin();
+    } catch (err) {
+      alert("Erreur : " + err.message);
     }
-
-    await chargerDonneesAdmin();
   };
 
-  // Clôture du soir : Remettre tous les articles non retirés en rayon en un seul clic
+  // 6. Clôture du soir / Remise en rayon via route API sécurisée
   const libererTousLesArticles = async (articlesARemettre) => {
     if (!articlesARemettre || articlesARemettre.length === 0) return;
-    if (!confirm(`Remettre ces ${articlesARemettre.length} pièce(s) en rayon et sur la vitrine ?`)) return;
+    if (!confirm(`Remettre ces ${articlesARemettre.length} pièce(s) en rayon et sur la vitrine ?`))
+      return;
 
     const ids = articlesARemettre.map((a) => a.id);
 
-    await supabase
-      .from("articles")
-      .update({ statut: "disponible"})
-      .in("id", ids);
+    try {
+      const res = await fetch("/api/articles/remise-en-rayon", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ids,
+          slug,
+        }),
+      });
 
-    await supabase
-      .from("reservations")
-      .update({ statut: "annulee" })
-      .in("article_id", ids);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erreur lors de la libération");
 
-    setModaleCloture(false);
-    await chargerDonneesAdmin();
+      setModaleCloture(false);
+      await chargerDonneesAdmin();
+    } catch (err) {
+      alert("Erreur : " + err.message);
+    }
   };
 
-  // 3. Supprimer définitivement un article
+  // 7. Supprimer un article via route API sécurisée
   const supprimerArticle = async (article) => {
     if (!confirm(`Retirer "${article.titre}" de la vitrine en ligne ?`)) return;
 
-    if (article.photo_url && article.photo_url.includes("/photos-vitrine/")) {
-      const cheminPhoto = article.photo_url.split("/photos-vitrine/")[1];
-      if (cheminPhoto) {
-        await supabase.storage.from("photos-vitrine").remove([cheminPhoto]);
-      }
-    }
+    try {
+      const response = await fetch("/api/articles/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          articleId: article.id,
+          boutiqueId: boutique.id,
+          motDePasse: motDePasseSaisi,
+        }),
+      });
 
-    await supabase.from("articles").delete().eq("id", article.id);
-    await chargerDonneesAdmin();
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || "Erreur lors de la suppression");
+      }
+
+      await chargerDonneesAdmin();
+    } catch (err) {
+      alert("Erreur lors de la suppression : " + err.message);
+    }
   };
 
-  // Préremplir et ouvrir la modale de modification
+  // Préremplir la modale de modification
   const ouvrirModaleModif = (article) => {
     setArticleEnModif(article);
     setModifTitre(article.titre);
@@ -350,7 +452,7 @@ function ContenuAdmin() {
     setModifApercuPhoto(article.photo_url);
   };
 
-  // Sauvegarder la modification dans Supabase
+  // 8. Sauvegarder la modification via route API sécurisée
   const enregistrerModification = async (e) => {
     e.preventDefault();
     if (!modifTitre.trim() || !modifPrix) {
@@ -378,26 +480,24 @@ function ContenuAdmin() {
           .getPublicUrl(cheminFichier);
 
         nouvelleUrlPhoto = urlData.publicUrl;
-
-        if (articleEnModif.photo_url && articleEnModif.photo_url.includes("/photos-vitrine/")) {
-          const ancienChemin = articleEnModif.photo_url.split("/photos-vitrine/")[1];
-          if (ancienChemin) {
-            await supabase.storage.from("photos-vitrine").remove([ancienChemin]);
-          }
-        }
       }
 
-      const { error: updateError } = await supabase
-        .from("articles")
-        .update({
+      const response = await fetch("/api/articles/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          articleId: articleEnModif.id,
           titre: modifTitre.trim(),
           taille: modifTaille.trim(),
           prix: parseFloat(modifPrix),
-          photo_url: nouvelleUrlPhoto,
-        })
-        .eq("id", articleEnModif.id);
+          photoUrl: nouvelleUrlPhoto,
+          anciennePhotoUrl: modifFichierPhoto ? articleEnModif.photo_url : null,
+          slug,
+        }),
+      });
 
-      if (updateError) throw updateError;
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Erreur lors de la modification");
 
       setArticleEnModif(null);
       await chargerDonneesAdmin();
@@ -408,81 +508,69 @@ function ContenuAdmin() {
     }
   };
 
-  // 4. Sauvegarder les réglages (Téléphone + Email + Mot de passe)
+  // 9. Sauvegarder les réglages via route API sécurisée
   const sauvegarderReglages = async (e) => {
     e.preventDefault();
-    if (!nouveauTel.trim() || !nouveauMdp.trim()) {
-      alert("Le téléphone et le code ne peuvent pas être vides.");
+
+    if (!nouveauTel.trim()) {
+      alert("Le numéro de téléphone est obligatoire.");
       return;
     }
 
-    let telFormate = nouveauTel.trim().replace(/\s+/g, "");
-    if (telFormate.startsWith("0")) {
-      telFormate = "+33" + telFormate.substring(1);
-    }
+    try {
+      const response = await fetch("/api/boutiques/reglages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          slug,
+          motDePasseActuel: motDePasseSaisi,
+          telephonePro: nouveauTel,
+          nouveauMotDePasse: nouveauMdp,
+          email: nouvelEmail,
+          maxArticles,
+          heureSoir,
+          enPause,
+          messagePause,
+          messageAnnonce,
+          joursFermeture,
+        }),
+      });
 
-    const { error } = await supabase
-      .from("boutiques")
-      .update({
-        telephone_pro: telFormate,
-        mot_de_passe_admin: nouveauMdp.trim(),
-        email: nouvelEmail.trim() || null,
-        max_articles_par_cliente: parseInt(maxArticles, 10) || 1,
-        heure_fermeture_soir: heureSoir,
-        en_pause: enPause,
-        message_pause: messagePause.trim(),
-        message_annonce: messageAnnonce.trim() || null,
-        jours_fermeture: joursFermeture,
-      })
-      .eq("id", boutique.id);
+      const resultat = await response.json();
+      if (!response.ok) throw new Error(resultat.error || "Erreur lors de la mise à jour");
 
-    if (error) {
-      alert("Erreur lors de la mise à jour : " + error.message);
-    } else {
+      if (nouveauMdp.trim()) {
+        setMotDePasseSaisi(nouveauMdp.trim());
+      }
+
       alert("✅ Vos réglages ont bien été enregistrés !");
       setModaleReglages(false);
       await chargerDonneesAdmin();
+    } catch (err) {
+      alert("❌ " + err.message);
     }
   };
 
-  // Articles actuellement réservés ou bloqués
-  const articlesNonRetires = articles.filter(
-    (a) =>
-      a.statut === "confirme"
-  );
+  const articlesNonRetires = articles.filter((a) => a.statut === "confirme");
 
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center text-stone-500">Chargement de l'espace vendeuse...</div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center text-stone-500 font-sans">
+        Chargement de l'espace vendeuse...
+      </div>
+    );
   }
 
   if (!boutique) {
-    return <div className="min-h-screen flex items-center justify-center text-red-500">Boutique introuvable.</div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center text-red-500 font-sans">
+        Boutique introuvable.
+      </div>
+    );
   }
 
   // Écran de connexion
   if (!autorise) {
-    const reinitialiserMotDePasse = async () => {
-      const quatreDerniersPro = boutique.telephone_pro.slice(-4);
-      if (quatreChiffres.trim() !== quatreDerniersPro) {
-        alert("❌ Les 4 derniers chiffres ne correspondent pas au téléphone de la boutique.");
-        return;
-      }
-      if (!nouveauMdpOubli.trim()) {
-        alert("Merci de choisir votre nouveau code secret.");
-        return;
-      }
-
-      await supabase
-        .from("boutiques")
-        .update({ mot_de_passe_admin: nouveauMdpOubli.trim() })
-        .eq("id", boutique.id);
-
-      alert("✅ Votre nouveau code secret est enregistré !");
-      localStorage.setItem(`admin_auth_${slug}`, "true");
-      setAutorise(true);
-      await chargerDonneesAdmin();
-    };
-
     return (
       <div className="min-h-screen bg-stone-900 flex items-center justify-center p-4 font-sans">
         <div className="bg-white rounded-3xl p-6 w-full max-w-sm text-center shadow-2xl">
@@ -505,14 +593,7 @@ function ContenuAdmin() {
                 className="w-full border border-stone-300 rounded-xl px-4 py-3 text-center text-stone-900 font-bold mb-4 focus:outline-hidden focus:ring-2 focus:ring-stone-900"
               />
               <button
-                onClick={() => {
-                  if (motDePasseSaisi === boutique.mot_de_passe_admin) {
-                    localStorage.setItem(`admin_auth_${slug}`, "true");
-                    setAutorise(true);
-                  } else {
-                    alert("Code incorrect");
-                  }
-                }}
+                onClick={connecterAdmin}
                 className="w-full bg-stone-900 text-white font-semibold py-3 rounded-xl shadow-xs mb-3 cursor-pointer"
               >
                 Ouvrir mon tableau de bord
@@ -528,7 +609,8 @@ function ContenuAdmin() {
           ) : (
             <div className="text-left space-y-3 mt-3">
               <p className="text-xs text-stone-600 text-center mb-2">
-                Vérifiez votre identité avec les <strong>4 derniers chiffres</strong> du téléphone de la boutique :
+                Vérifiez votre identité avec les <strong>4 derniers chiffres</strong> du téléphone
+                de la boutique :
               </p>
 
               <div>
@@ -589,7 +671,6 @@ function ContenuAdmin() {
           <h1 className="text-lg font-bold">{boutique.nom}</h1>
         </div>
         <div className="flex items-center gap-1.5">
-          {/* BOUTON CLÔTURE DU SOIR / BILAN */}
           <button
             onClick={() => setModaleCloture(true)}
             className="text-xs bg-stone-800 hover:bg-stone-700 text-amber-300 font-semibold px-2.5 py-2 rounded-xl border border-stone-700 cursor-pointer flex items-center gap-1"
@@ -603,7 +684,6 @@ function ContenuAdmin() {
             )}
           </button>
 
-          {/* BOUTON RÉGLAGES */}
           <button
             onClick={() => setModaleReglages(true)}
             className="text-xs bg-stone-800 hover:bg-stone-700 text-amber-400 font-semibold px-2.5 py-2 rounded-xl border border-stone-700 cursor-pointer"
@@ -611,7 +691,6 @@ function ContenuAdmin() {
             ⚙️ Réglages
           </button>
 
-          {/* LIEN VITRINE */}
           <a
             href={`/${boutique.slug}`}
             target="_blank"
@@ -636,8 +715,7 @@ function ContenuAdmin() {
 
         {articles.map((article) => {
           const resa = reservations.find((r) => r.article_id === article.id);
-          const estBloque =
-            article.statut === "confirme";
+          const estBloque = article.statut === "confirme";
 
           return (
             <div
@@ -683,7 +761,7 @@ function ContenuAdmin() {
                 </div>
               </div>
 
-              {/* BOUTONS D'ACTION : Vendu / Libérer / Modifier / Retirer */}
+              {/* BOUTONS D'ACTION */}
               <div className="flex flex-wrap gap-2 mt-3 pt-2 border-t border-stone-100">
                 <button
                   onClick={() => changerStatutArticle(article.id, "vendu")}
@@ -722,7 +800,7 @@ function ContenuAdmin() {
         })}
       </main>
 
-      {/* MODALE BILAN / CLÔTURE AVEC DISTINCTION ROUGE / EN COURS */}
+      {/* MODALE BILAN / CLÔTURE */}
       {modaleCloture && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
@@ -731,9 +809,7 @@ function ContenuAdmin() {
                 <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600">
                   Bilan
                 </span>
-                <h3 className="text-lg font-bold text-stone-900">
-                  🌙 Articles en attente
-                </h3>
+                <h3 className="text-lg font-bold text-stone-900">🌙 Articles en attente</h3>
               </div>
               <button
                 type="button"
@@ -755,14 +831,15 @@ function ContenuAdmin() {
             ) : (
               <div className="space-y-3">
                 <p className="text-xs text-stone-600 leading-relaxed">
-                  Vérifiez le statut des articles. Les pièces en <strong className="text-red-600">rouge</strong> doivent être remises en rayon :
+                  Vérifiez le statut des articles. Les pièces en{" "}
+                  <strong className="text-red-600">rouge</strong> doivent être remises en rayon :
                 </p>
 
                 <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
                   {articlesNonRetires.map((art) => {
                     const resa = reservations.find((r) => r.article_id === art.id);
                     const echeance = verifierEcheanceResa(
-                      resa?.created_at, 
+                      resa?.created_at,
                       boutique?.heure_fermeture_soir || "18h30"
                     );
 
@@ -792,11 +869,17 @@ function ContenuAdmin() {
                           </div>
 
                           <p className="text-xs font-bold text-stone-900 truncate">
-                            {art.titre} <span className="font-normal text-stone-500">({art.taille} • {art.prix} €)</span>
+                            {art.titre}{" "}
+                            <span className="font-normal text-stone-500">
+                              ({art.taille} • {art.prix} €)
+                            </span>
                           </p>
 
                           <p className="text-[11px] text-stone-600 font-medium truncate mt-0.5">
-                            👤 {resa ? `${resa.prenom_cliente} (${resa.telephone_cliente || "Sans tél"})` : "Réservation active"}
+                            👤{" "}
+                            {resa
+                              ? `${resa.prenom_cliente} (${resa.telephone_cliente || "Sans tél"})`
+                              : "Réservation active"}
                           </p>
                         </div>
 
@@ -815,24 +898,23 @@ function ContenuAdmin() {
                   })}
                 </div>
 
-                {/* Remet en rayon en 1 clic uniquement les pièces expirées */}
                 {(() => {
-                  const expirés = articlesNonRetires.filter((art) => {
+                  const expires = articlesNonRetires.filter((art) => {
                     const resa = reservations.find((r) => r.article_id === art.id);
                     return verifierEcheanceResa(
-                      resa?.created_at, 
+                      resa?.created_at,
                       boutique?.heure_fermeture_soir || "18h30"
                     ).depassee;
                   });
 
-                  if (expirés.length === 0) return null;
+                  if (expires.length === 0) return null;
 
                   return (
                     <button
-                      onClick={() => libererTousLesArticles(expirés)}
+                      onClick={() => libererTousLesArticles(expires)}
                       className="w-full bg-red-600 hover:bg-red-700 text-white font-extrabold text-xs py-3 rounded-xl shadow-xs transition active:scale-98 cursor-pointer mt-2"
                     >
-                      ✨ Remettre en vitrine les {expirés.length} pièce(s) expirée(s)
+                      ✨ Remettre en vitrine les {expires.length} pièce(s) expirée(s)
                     </button>
                   );
                 })()}
@@ -887,7 +969,9 @@ function ContenuAdmin() {
                       type="file"
                       accept="image/*"
                       capture="environment"
-                      onClick={(e) => { e.target.value = null; }}
+                      onClick={(e) => {
+                        e.target.value = null;
+                      }}
                       onChange={gererSelectionPhoto}
                       className="hidden"
                     />
@@ -898,7 +982,9 @@ function ContenuAdmin() {
                     <input
                       type="file"
                       accept="image/*"
-                      onClick={(e) => { e.target.value = null; }}
+                      onClick={(e) => {
+                        e.target.value = null;
+                      }}
                       onChange={gererSelectionPhoto}
                       className="hidden"
                     />
@@ -975,9 +1061,7 @@ function ContenuAdmin() {
                 <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600">
                   Correction
                 </span>
-                <h3 className="text-lg font-bold text-stone-900">
-                  Modifier l'article
-                </h3>
+                <h3 className="text-lg font-bold text-stone-900">Modifier l'article</h3>
               </div>
               <button
                 type="button"
@@ -1003,7 +1087,9 @@ function ContenuAdmin() {
                       type="file"
                       accept="image/*"
                       capture="environment"
-                      onClick={(e) => { e.target.value = null; }}
+                      onClick={(e) => {
+                        e.target.value = null;
+                      }}
                       onChange={(e) => {
                         const file = e.target.files?.[0];
                         if (file) {
@@ -1020,7 +1106,9 @@ function ContenuAdmin() {
                     <input
                       type="file"
                       accept="image/*"
-                      onClick={(e) => { e.target.value = null; }}
+                      onClick={(e) => {
+                        e.target.value = null;
+                      }}
                       onChange={(e) => {
                         const file = e.target.files?.[0];
                         if (file) {
@@ -1090,22 +1178,19 @@ function ContenuAdmin() {
         </div>
       )}
 
-      {/* MODALE DES RÉGLAGES AVEC ONGLETS */}
+      {/* MODALE DES RÉGLAGES */}
       {modaleReglages && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4">
           <form
             onSubmit={sauvegarderReglages}
             className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl flex flex-col max-h-[90vh]"
           >
-            {/* 1. EN-TÊTE FIXE */}
             <div className="flex justify-between items-center border-b border-stone-100 pb-3">
               <div>
                 <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600">
                   Configuration
                 </span>
-                <h3 className="text-lg font-bold text-stone-900">
-                  Réglages de la boutique
-                </h3>
+                <h3 className="text-lg font-bold text-stone-900">Réglages de la boutique</h3>
               </div>
               <button
                 type="button"
@@ -1116,7 +1201,6 @@ function ContenuAdmin() {
               </button>
             </div>
 
-            {/* 2. BARRE D'ONGLETS */}
             <div className="grid grid-cols-2 gap-1.5 p-1 bg-stone-100 rounded-xl my-3 text-xs font-bold">
               <button
                 type="button"
@@ -1142,9 +1226,7 @@ function ContenuAdmin() {
               </button>
             </div>
 
-            {/* 3. CONTENU DÉFILABLE SELON L'ONGLET */}
             <div className="overflow-y-auto pr-1 space-y-4 flex-1">
-              {/* ================= ONGLET 1 : CONTACT & SÉCURITÉ ================= */}
               {ongletActif === "contact" && (
                 <div className="space-y-3.5">
                   <div>
@@ -1177,19 +1259,17 @@ function ContenuAdmin() {
                     />
                   </div>
 
-                  {/* CODE SECRET VENDEUSE (ALIGNEMENT FLEX ANTI-DÉBORDEMENT) */}
                   <div>
                     <label className="block text-xs font-bold text-stone-700 mb-1">
                       🔑 Code secret vendeuse (Mot de passe Admin) :
                     </label>
-                    
+
                     <div className="flex items-center border border-stone-300 rounded-xl px-3.5 py-2 bg-white focus-within:ring-2 focus-within:ring-stone-900 focus-within:border-transparent">
                       <input
                         type={afficherMdp ? "text" : "password"}
-                        placeholder="••••••••"
+                        placeholder="Laisser vide pour ne pas changer"
                         value={nouveauMdp}
                         onChange={(e) => setNouveauMdp(e.target.value)}
-                        required
                         className="w-full text-sm font-semibold text-stone-900 outline-none bg-transparent"
                       />
                       <button
@@ -1199,33 +1279,53 @@ function ContenuAdmin() {
                         title={afficherMdp ? "Masquer le code" : "Afficher le code"}
                       >
                         {afficherMdp ? (
-                          /* Icône Œil barré */
-                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-5 h-5">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            strokeWidth={1.8}
+                            stroke="currentColor"
+                            className="w-5 h-5"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"
+                            />
                           </svg>
                         ) : (
-                          /* Icône Œil ouvert */
-                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-5 h-5">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            strokeWidth={1.8}
+                            stroke="currentColor"
+                            className="w-5 h-5"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"
+                            />
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                            />
                           </svg>
                         )}
                       </button>
                     </div>
 
                     <p className="text-[11px] text-stone-400 mt-1">
-                      Ce code permet d'accéder au panneau d'administration de la boutique.
+                      Remplissez ce champ uniquement si vous souhaitez modifier votre code secret.
                     </p>
                   </div>
 
                   <div className="pt-2">
                     <button
                       type="button"
-                      onClick={() => {
-                        localStorage.removeItem(`admin_auth_${slug}`);
-                        setAutorise(false);
-                        setModaleReglages(false);
-                      }}
+                      onClick={deconnecterAdmin}
                       className="w-full bg-red-50 text-red-600 font-semibold text-xs py-2.5 rounded-xl cursor-pointer hover:bg-red-100 transition"
                     >
                       🔒 Déconnecter cet appareil
@@ -1234,10 +1334,8 @@ function ContenuAdmin() {
                 </div>
               )}
 
-              {/* ================= ONGLET 2 : PARAMÈTRES GÉNÉRAUX ================= */}
               {ongletActif === "general" && (
                 <div className="space-y-3.5">
-                  {/* Annonce vitrine */}
                   <div>
                     <label className="block text-xs font-bold text-stone-700 mb-1">
                       📣 Annonce vitrine (Optionnel) :
@@ -1251,7 +1349,6 @@ function ContenuAdmin() {
                     />
                   </div>
 
-                  {/* Quota par cliente */}
                   <div>
                     <label className="block text-xs font-bold text-stone-700 mb-1">
                       🛡️ Réservations simultanées par cliente :
@@ -1267,7 +1364,6 @@ function ContenuAdmin() {
                     </select>
                   </div>
 
-                  {/* Heure limite le soir */}
                   <div>
                     <label className="block text-xs font-bold text-stone-700 mb-1">
                       🕒 Heure limite de réservation le soir :
@@ -1284,7 +1380,6 @@ function ContenuAdmin() {
                     </select>
                   </div>
 
-                  {/* Jours de fermeture */}
                   <div>
                     <label className="block text-xs font-bold text-stone-700 mb-1">
                       📅 Jours habituels de fermeture :
@@ -1314,7 +1409,6 @@ function ContenuAdmin() {
                     </div>
                   </div>
 
-                  {/* Mode Congés */}
                   <div className="border-t border-stone-100 pt-2 space-y-2">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
@@ -1342,7 +1436,6 @@ function ContenuAdmin() {
               )}
             </div>
 
-            {/* 4. BOUTON D'ENREGISTREMENT FIXE TOUT EN BAS */}
             <div className="pt-3 border-t border-stone-100 mt-2">
               <button
                 type="submit"
@@ -1360,7 +1453,11 @@ function ContenuAdmin() {
 
 export default function AdminBoutique() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Chargement...</div>}>
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center font-sans">Chargement...</div>
+      }
+    >
       <ContenuAdmin />
     </Suspense>
   );

@@ -4,32 +4,32 @@ import { useEffect, useState, Suspense } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
-  function calculerDelaiAffichage(dateCreationISO, heureCloture = "19h00") {
-    if (!dateCreationISO) return heureCloture;
+function calculerDelaiAffichage(dateCreationISO, heureCloture = "19h00") {
+  if (!dateCreationISO) return heureCloture;
 
-    const dateResa = new Date(dateCreationISO);
-    const dateResaFr = new Date(dateResa.toLocaleString("en-US", { timeZone: "Europe/Paris" }));
-    const heure = dateResaFr.getHours();
-    const jour = dateResaFr.getDay();
+  const dateResa = new Date(dateCreationISO);
+  const dateResaFr = new Date(dateResa.toLocaleString("en-US", { timeZone: "Europe/Paris" }));
+  const heure = dateResaFr.getHours();
+  const jour = dateResaFr.getDay();
 
-    // 1. Réservé le matin (< 14h) du mardi au samedi
-    if (heure < 14 && jour !== 0 && jour !== 1) {
-      return `ce soir ${heureCloture}`;
-    }
-
-    // 2. Samedi après 14h ou Dimanche
-    if (jour === 0 || (jour === 6 && heure >= 14)) {
-      return "mardi 14h00";
-    }
-
-    // 3. Lundi (fermeture)
-    if (jour === 1) {
-      return `mardi ${heureCloture}`;
-    }
-
-    // 4. Après 14h en semaine (ex: 15h35)
-    return "demain 14h00";
+  // 1. Réservé le matin (< 14h) du mardi au samedi
+  if (heure < 14 && jour !== 0 && jour !== 1) {
+    return `ce soir ${heureCloture}`;
   }
+
+  // 2. Samedi après 14h ou Dimanche
+  if (jour === 0 || (jour === 6 && heure >= 14)) {
+    return "mardi 14h00";
+  }
+
+  // 3. Lundi (fermeture)
+  if (jour === 1) {
+    return `mardi ${heureCloture}`;
+  }
+
+  // 4. Après 14h en semaine (ex: 15h35)
+  return "demain 14h00";
+}
 
 function ContenuVitrine() {
   const { slug } = useParams();
@@ -49,35 +49,51 @@ function ContenuVitrine() {
   // Modale du ticket de réservation
   const [ticketConfirmation, setTicketConfirmation] = useState(null);
 
-  // 1. Déclarer l'état pour les réservations en haut du composant :
+  // Réservations actives
   const [reservations, setReservations] = useState([]);
 
-  // 2. Dans chargerBoutiqueEtArticles :
+  // États pour la modale liste d'attente
+  const [articleAttente, setArticleAttente] = useState(null);
+  const [prenomAttente, setPrenomAttente] = useState("");
+  const [emailAttente, setEmailAttente] = useState("");
+  const [chargementAttente, setChargementAttente] = useState(false);
+
   const chargerBoutiqueEtArticles = async () => {
-    const { data: dataBoutique } = await supabase
-      .from("boutiques")
-      .select("*")
-      .eq("slug", slug)
-      .maybeSingle();
+  const { data: dataBoutique } = await supabase
+    .from("boutiques")
+    .select(`
+      id,
+      nom,
+      slug,
+      telephone_pro,
+      email,
+      max_articles_par_cliente,
+      heure_fermeture_soir,
+      en_pause,
+      message_pause,
+      message_annonce,
+      jours_fermeture
+    `)
+    .eq("slug", slug)
+    .maybeSingle();
 
     if (dataBoutique) {
       setBoutique(dataBoutique);
 
       const { data: dataArticles } = await supabase
         .from("articles")
-        .select("*")
+        .select("id, boutique_id, titre, taille, prix, photo_url, statut, created_at")
         .eq("boutique_id", dataBoutique.id)
         .neq("statut", "vendu")
         .order("created_at", { ascending: false });
 
       setArticles(dataArticles || []);
 
-      // 👉 Récupérer les réservations associées pour calculer l'échéance exacte
       if (dataArticles && dataArticles.length > 0) {
         const idsArticles = dataArticles.map((a) => a.id);
         const { data: dataResas } = await supabase
           .from("reservations")
-          .select("*")
+          .select("id, article_id, created_at, statut")
           .in("article_id", idsArticles)
           .neq("statut", "annulee")
           .order("created_at", { ascending: false });
@@ -92,6 +108,39 @@ function ContenuVitrine() {
     if (!slug) return;
     chargerBoutiqueEtArticles();
   }, [slug]);
+
+    const validerListeAttente = async (e) => {
+    e.preventDefault();
+    if (!prenomAttente.trim() || !emailAttente.trim()) {
+      alert("Merci d'indiquer votre prénom et votre e-mail.");
+      return;
+    }
+
+    setChargementAttente(true);
+    try {
+      const res = await fetch("/api/liste-attente", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          article_id: articleAttente.id,
+          prenom: prenomAttente.trim(),
+          email: emailAttente.trim(),
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Une erreur est survenue");
+
+      alert("✨ C'est noté ! Vous recevrez un e-mail prioritaire si cette pièce se libère.");
+      setArticleAttente(null);
+      setPrenomAttente("");
+      setEmailAttente("");
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setChargementAttente(false);
+    }
+  };
 
   // Envoi de la réservation
   const lancerReservation = async (canal) => {
@@ -127,7 +176,6 @@ function ContenuVitrine() {
 
       const { codeResa, heureFin } = data;
 
-      // Met à jour la grille pour marquer l'article comme réservé
       setArticles((prev) =>
         prev.map((a) =>
           a.id === articleSelectionne.id ? { ...a, statut: "confirme" } : a
@@ -241,7 +289,7 @@ function ContenuVitrine() {
                     title="Cliquer pour agrandir"
                   >
                     <img
-                      src={article.photo_url}
+                      src={article.photo_url || "/placeholder.png"}
                       alt={article.titre}
                       className="w-full h-full object-cover group-hover:scale-103 transition duration-300"
                     />
@@ -249,11 +297,6 @@ function ContenuVitrine() {
                     {/* Badge Taille */}
                     <span className="absolute top-2.5 left-2.5 bg-stone-900/85 backdrop-blur-xs text-white text-[11px] font-bold px-2.5 py-1 rounded-lg">
                       {article.taille}
-                    </span>
-
-                    {/* Icône loupe */}
-                    <span className="absolute bottom-2 right-2 bg-white/80 backdrop-blur-xs text-stone-700 w-6 h-6 rounded-full flex items-center justify-center text-xs shadow-xs opacity-75 group-hover:opacity-100 transition">
-                      🔍
                     </span>
 
                     {/* Voile si réservé */}
@@ -281,7 +324,7 @@ function ContenuVitrine() {
                       </p>
                     </div>
 
-                    {/* BOUTON D'ACTION */}
+                    {/* BOUTON D'ACTION CLIENT */}
                     <div className="mt-3">
                       {estDisponible ? (
                         <button
@@ -296,22 +339,12 @@ function ContenuVitrine() {
                           {boutique?.en_pause ? "Réservations en pause" : "Mettre de côté"}
                         </button>
                       ) : (
-                        (() => {
-                          const resa = reservations.find((r) => r.article_id === article.id);
-                          const delaiTexte = calculerDelaiAffichage(
-                            resa?.created_at,
-                            boutique?.heure_fermeture_soir || "19h00"
-                          );
-
-                          return (
-                            <button
-                              disabled
-                              className="w-full bg-stone-100 text-stone-500 font-semibold text-xs py-2.5 px-3 rounded-xl cursor-not-allowed"
-                            >
-                              🔒 Réservé ({delaiTexte})
-                            </button>
-                          );
-                        })()
+                        <button
+                          onClick={() => setArticleAttente(article)}
+                          className="w-full bg-stone-100 hover:bg-stone-200 text-stone-700 font-semibold text-xs py-2.5 px-3 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5"
+                        >
+                          <span>🔒</span> Déjà réservé (M'alerter si dispo)
+                        </button>
                       )}
                     </div>
                   </div>
@@ -342,7 +375,7 @@ function ContenuVitrine() {
 
             <div className="relative aspect-3/4 bg-stone-100 overflow-hidden">
               <img
-                src={articleApercu.photo_url}
+                src={articleApercu.photo_url || "/placeholder.png"}
                 alt={articleApercu.titre}
                 className="w-full h-full object-cover"
               />
@@ -415,7 +448,7 @@ function ContenuVitrine() {
 
             <div className="flex items-center gap-3 bg-stone-50 p-3 rounded-2xl">
               <img
-                src={articleSelectionne.photo_url}
+                src={articleSelectionne.photo_url || "/placeholder.png"}
                 alt={articleSelectionne.titre}
                 className="w-12 h-14 object-cover rounded-xl shrink-0"
               />
@@ -541,16 +574,75 @@ function ContenuVitrine() {
           </div>
         </div>
       )}
+
+      {/* Modale d'inscription liste d'attente (à placer avec les autres modales) */}
+      {articleAttente && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl">
+            <div className="flex justify-between items-start mb-3">
+              <h3 className="text-base font-bold text-stone-900">
+                Être alertée si la pièce se libère
+              </h3>
+              <button
+                onClick={() => setArticleAttente(null)}
+                className="text-stone-400 hover:text-stone-600 text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-stone-500 mb-4">
+              L'article <strong>{articleAttente.titre}</strong> est actuellement en cabine. Laissez votre e-mail pour recevoir une notification prioritaire s'il revient en vitrine.
+            </p>
+
+            <form onSubmit={validerListeAttente} className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">
+                  Votre prénom
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Julie"
+                  value={prenomAttente}
+                  onChange={(e) => setPrenomAttente(e.target.value)}
+                  className="w-full border border-stone-300 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-stone-900"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">
+                  Votre e-mail
+                </label>
+                <input
+                  type="email"
+                  required
+                  placeholder="julie@exemple.fr"
+                  value={emailAttente}
+                  onChange={(e) => setEmailAttente(e.target.value)}
+                  className="w-full border border-stone-300 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-stone-900"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={chargementAttente}
+                className="w-full bg-stone-900 hover:bg-stone-800 text-white font-bold text-xs py-3 rounded-xl transition cursor-pointer disabled:opacity-50"
+              >
+                {chargementAttente ? "Enregistrement..." : "M'inscrire sur la liste d'attente"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 export function formaterPrix(prix) {
   if (prix === null || prix === undefined || prix === "") return "";
-  
   const nombre = Number(prix);
   if (isNaN(nombre)) return prix;
-
   return nombre % 1 !== 0 ? nombre.toFixed(2) : nombre.toString();
 }
 
