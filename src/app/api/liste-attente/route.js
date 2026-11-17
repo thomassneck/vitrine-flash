@@ -19,7 +19,7 @@ export async function POST(request) {
       .maybeSingle();
 
     if (existant) {
-      return NextResponse.json({ error: 'Vous êtes déjà inscrite sur la liste d\'attente de cet article.' }, { status: 400 });
+      return NextResponse.json({ error: 'Vous êtes déjà inscrit(e) sur la liste d\'attente de cet article.' }, { status: 400 });
     }
 
     // Inscription en fin de file

@@ -1,10 +1,10 @@
-import { supabase } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { Resend } from "resend";
 
 export async function notifierPremiereEnAttente(articleId) {
   try {
     // 1. Récupérer la 1re personne sur liste d'attente pour cet article (ordre chronologique strict)
-    const { data: candidate, error: candidateError } = await supabase
+    const { data: candidate, error: candidateError } = await supabaseAdmin
       .from("liste_attente")
       .select("id, prenom, email, articles(titre, taille, prix, boutiques(nom, slug))")
       .eq("article_id", articleId)
@@ -13,14 +13,19 @@ export async function notifierPremiereEnAttente(articleId) {
       .limit(1)
       .maybeSingle();
 
-    if (candidateError || !candidate) {
-      // Aucune cliente n'attend cette pièce
+    if (candidateError) {
+      console.error("❌ Erreur requête Supabase liste_attente :", candidateError);
+      return null;
+    }
+
+    if (!candidate) {
+      console.log("ℹ️ Aucune cliente en attente pour l'article :", articleId);
       return null;
     }
 
     const { prenom, email, articles } = candidate;
     const boutique = articles?.boutiques;
-    const urlVitrine = `${process.env.NEXT_PUBLIC_SITE_URL || "https://vitrine-flash-kappa.vercel.app"}/${boutique?.slug || "bisou-magique"}`;
+    const urlVitrine = `${process.env.NEXT_PUBLIC_SITE_URL || "https://www.proxi-saas.fr"}/${boutique?.slug || "mazette"}`;
 
     // 2. Vérification de la clé API Resend
     const cleResend = process.env.RESEND_API_KEY;
@@ -41,10 +46,10 @@ export async function notifierPremiereEnAttente(articleId) {
 
     const resend = new Resend(cleResend);
 
-    // 3. Envoi du mail d'alerte (sécurisé avec try/catch)
+    // 3. Envoi du mail d'alerte avec votre domaine vérifié proxi-saas.fr
     try {
       const { data, error } = await resend.emails.send({
-        from: "Vitrine Flash <onboarding@resend.dev>",
+        from: "Vitrine Flash <notifications@proxi-saas.fr>",
         to: email,
         subject: `Bonne nouvelle ${prenom} ! "${articles.titre}" est de nouveau disponible ✨`,
         html: `

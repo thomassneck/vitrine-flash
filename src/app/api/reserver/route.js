@@ -11,7 +11,6 @@ function calculerHeureMaxDynamique(joursFermeture = [0, 1], heureSoir = "18h30")
 
   const fermetures = Array.isArray(joursFermeture) ? joursFermeture : [0, 1];
   const heureCloture = heureSoir || "18h30";
-
   const estFermeAujourdhui = fermetures.includes(jourActuel);
 
   if (heure < 14 && !estFermeAujourdhui) {
@@ -37,7 +36,6 @@ export async function POST(request) {
   try {
     const { article_id, prenom, telephone, canal, taille_souhaitee } = await request.json();
 
-    // 1. Validation du mobile
     const telNettoye = telephone ? telephone.toString().replace(/[\s.-]/g, "") : "";
     const regexMobileFr = /^0[67]\d{8}$/;
 
@@ -52,13 +50,12 @@ export async function POST(request) {
       );
     }
 
-    // 2. Récupérer l'article et les réglages de la boutique (dont max_articles_par_cliente)
     const { data: article, error: updateError } = await supabaseAdmin
       .from('articles')
       .update({ statut: 'confirme' })
       .eq('id', article_id)
-      .eq('statut', 'disponible') // Empêche la réservation si déjà pris
-      .select('titre, taille, prix, boutiques(id, nom, email, telephone_pro, jours_fermeture, heure_fermeture_soir, max_articles_par_cliente)')
+      .eq('statut', 'disponible')
+      .select('titre, taille, prix, boutiques(id, nom, email, telephone_pro, jours_fermeture, heure_fermeture_soir, max_articles_par_cliente, en_pause, message_pause)')
       .single();
 
     if (updateError || !article) {
@@ -72,23 +69,18 @@ export async function POST(request) {
     const boutique = article.boutiques;
     const limiteMax = boutique?.max_articles_par_cliente || 1;
 
-    // Après avoir récupéré `article` et `boutique` :
     if (boutique?.en_pause) {
-      // On remet l'article en disponible si besoin
       await supabaseAdmin
         .from('articles')
         .update({ statut: 'disponible' })
         .eq('id', article_id);
 
       return NextResponse.json(
-        { 
-          error: boutique.message_pause || "La boutique est fermée pour congés. Les réservations sont suspendues." 
-        },
+        { error: boutique.message_pause || "La boutique est fermée pour congés. Les réservations sont suspendues." },
         { status: 400 }
       );
     }
 
-    // 3. Contrôle du quota dynamique par numéro de téléphone pour cette boutique
     const { data: resasEnCours, error: verifError } = await supabaseAdmin
       .from('reservations')
       .select('id, article_id, articles!inner(boutique_id)')
@@ -101,7 +93,6 @@ export async function POST(request) {
     }
 
     if (resasEnCours && resasEnCours.length >= limiteMax) {
-      // Si la limite est atteinte, on remet l'article en disponible pour ne pas le bloquer par erreur
       await supabaseAdmin
         .from('articles')
         .update({ statut: 'disponible' })
@@ -115,13 +106,11 @@ export async function POST(request) {
     }
 
     const codeResa = 'BM-' + Math.floor(100 + Math.random() * 900);
-
     const heureFin = calculerHeureMaxDynamique(
       boutique?.jours_fermeture,
       boutique?.heure_fermeture_soir
     );
 
-    // 4. Création de la réservation
     const { error: insertError } = await supabaseAdmin.from('reservations').insert({
       code_resa: codeResa,
       article_id,
@@ -136,12 +125,12 @@ export async function POST(request) {
       console.error("Erreur insert reservation Supabase:", insertError);
     }
 
-    // 5. Envoi email Resend
+    // Envoi email Resend avec domaine vérifié proxi-saas.fr et log explicite
     if (process.env.RESEND_API_KEY && boutique?.email) {
       const resend = new Resend(process.env.RESEND_API_KEY);
 
-      await resend.emails.send({
-        from: 'Vitrine Flash <onboarding@resend.dev>',
+      const { data: emailData, error: emailError } = await resend.emails.send({
+        from: 'Vitrine Flash <notifications@proxi-saas.fr>',
         to: boutique.email,
         subject: `🚨 Nouvelle résa : ${article.titre} pour ${prenom}`,
         html: `
@@ -158,7 +147,13 @@ export async function POST(request) {
             </ul>
           </div>
         `,
-      }).catch((err) => console.error("Erreur envoi mail Resend:", err));
+      });
+
+      if (emailError) {
+        console.error("❌ Erreur retournée par Resend (réservation) :", emailError);
+      } else {
+        console.log("✅ Email réservation envoyé à", boutique.email, "ID:", emailData?.id);
+      }
     }
 
     return NextResponse.json({

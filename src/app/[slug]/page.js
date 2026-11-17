@@ -575,7 +575,7 @@ function ContenuVitrine() {
         </div>
       )}
 
-      {/* Modale d'inscription liste d'attente (à placer avec les autres modales) */}
+      {/* Modale d'inscription liste d'attente*/}
       {articleAttente && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl">
