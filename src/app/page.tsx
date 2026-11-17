@@ -43,15 +43,15 @@ export default function LandingPageVitrineFlash() {
 
   const faqs = [
     {
-      q: "Mes clientes doivent-elles payer en ligne ?",
-      a: "Non, absolument pas. VitrineFlash est un outil drive-to-store piéton. La cliente réserve la pièce avec son prénom et son numéro de téléphone mobile pour la bloquer. Elle vient l'essayer ou la retirer et la régler en boutique sur votre terminal de caisse habituel.",
+      q: "Mes clients doivent-ils payer en ligne ?",
+      a: "Non, absolument pas. VitrineFlash est un outil drive-to-store piéton. Le client réserve la pièce avec son prénom et son numéro de téléphone mobile pour la bloquer. Elle vient l'essayer ou la retirer et la régler en boutique sur votre terminal de caisse habituel.",
     },
     {
       q: "Est-ce compatible avec mon logiciel de caisse actuel ?",
       a: "Totalement. Vous n'avez aucun branchement ni passerelle bancaire à configurer. Quand un article est vendu, vous appuyez simplement sur « Vendu » sur votre smartphone pour le retirer de la vitrine.",
     },
     {
-      q: "Que se passe-t-il si la cliente ne vient pas chercher la pièce ?",
+      q: "Que se passe-t-il si le client ne vient pas chercher la pièce ?",
       a: "Chaque réservation comporte une heure limite (ex. le lendemain à 14h ou à la fermeture en fonction du paramétrage). Dès l'échéance dépassée, la modale de Bilan du soir vous permet de remettre toutes les pièces en vitrine en un seul clic.",
     },
     {
@@ -230,7 +230,7 @@ export default function LandingPageVitrineFlash() {
             <span className="text-3xl mb-4 block">🔒</span>
             <h3 className="text-base font-bold text-amber-300 mb-2">Bloqué sans carte bancaire</h3>
             <p className="text-xs text-zinc-300 leading-relaxed">
-              Zéro abandon au checkout. Les clientes réservent avec leur prénom et leur numéro de mobile. Elles essayent et règlent en magasin sur votre terminal habituel.
+              Zéro abandon au checkout. Les clients réservent avec leur prénom et leur numéro de mobile. Elles essayent et règlent en magasin sur votre terminal habituel.
             </p>
           </div>
 
@@ -238,7 +238,7 @@ export default function LandingPageVitrineFlash() {
             <span className="text-3xl mb-4 block">🌙</span>
             <h3 className="text-base font-bold text-white mb-2">Clôture du soir en 1 clic</h3>
             <p className="text-xs text-zinc-400 leading-relaxed">
-              Une cliente n&apos;est pas passée ? Le bouton Bilan identifie les articles expirés et vous permet de les remettre instantanément en vitrine pour les passants du soir, après fermeture.
+              Un client n&apos;est pas passé ? Le bouton Bilan identifie les articles expirés et vous permet de les remettre instantanément en vitrine pour les passants du soir, après fermeture.
             </p>
           </div>
         </div>

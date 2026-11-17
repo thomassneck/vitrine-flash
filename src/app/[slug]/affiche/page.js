@@ -56,7 +56,7 @@ function ContenuAffiche() {
       {/* FEUILLE A4 */}
       <div className="max-w-2xl mx-auto bg-white shadow-2xl print:shadow-none rounded-3xl print:rounded-none overflow-hidden border border-stone-200 print:border-none">
         
-        {/* PARTIE 1 (HAUT) : LE CHEVALET VITRINE POUR LES CLIENTES */}
+        {/* PARTIE 1 (HAUT) : LE CHEVALET VITRINE POUR LES CLIENTS */}
         <div className="p-8 text-center border-b-2 border-dashed border-stone-300 relative bg-gradient-to-b from-amber-50/60 to-white">
           <span className="inline-block bg-stone-900 text-amber-300 text-xs font-extrabold uppercase tracking-widest px-4 py-1.5 rounded-full mb-3">
             ✨ Vitrine Connectée 24h/24 & 7j/7 ✨
@@ -81,7 +81,7 @@ function ContenuAffiche() {
             </p>
           </div>
 
-          {/* Les 3 étapes clientes */}
+          {/* Les 3 étapes clients */}
           <div className="grid grid-cols-3 gap-3 max-w-lg mx-auto text-left bg-stone-50 p-4 rounded-2xl border border-stone-200">
             <div>
               <span className="text-xs font-black bg-amber-300 text-stone-950 px-2 py-0.5 rounded-md">
@@ -145,7 +145,7 @@ function ContenuAffiche() {
                 ⏱️ Fini les 15 DM Instagram pour la même pièce
               </p>
               <p className="text-stone-600 leading-relaxed">
-                La 1ère cliente qui clique bloque l'article jusqu'à une certaine heure (définie par le système en fonction de l'heure de réservation) et t'envoie un SMS pré-rempli. L'article affiche <em>"Déjà réservé"</em> pour les suivantes.
+                Le 1er client qui clique bloque l'article jusqu'à une certaine heure (définie par le système en fonction de l'heure de réservation) et t'envoie un SMS pré-rempli. L'article affiche <em>"Déjà réservé"</em> pour les suivantes.
               </p>
             </div>
           </div>

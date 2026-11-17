@@ -19,7 +19,7 @@ export async function notifierPremiereEnAttente(articleId) {
     }
 
     if (!candidate) {
-      console.log("ℹ️ Aucune cliente en attente pour l'article :", articleId);
+      console.log("ℹ️ Aucun client en attente pour l'article :", articleId);
       return null;
     }
 
@@ -80,7 +80,7 @@ export async function notifierPremiereEnAttente(articleId) {
 
       console.log("✅ Email Resend envoyé avec succès :", data?.id);
 
-      // 4. Marquer la cliente comme notifiée pour ne pas lui renvoyer d'email en boucle
+      // 4. Marquer le client comme notifiée pour ne pas lui renvoyer d'email en boucle
       await supabaseAdmin
         .from("liste_attente")
         .update({ statut: "notifiee" })

@@ -715,7 +715,7 @@ function ContenuAdmin() {
             href={`/${boutique.slug}`}
             target="_blank"
             className="flex flex-col items-center justify-center w-14 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700/80 transition active:scale-95"
-            title="Ouvrir la vitrine cliente"
+            title="Ouvrir la vitrine client"
           >
             <span className="text-sm leading-none">👁️</span>
             <span className="text-[10px] font-medium text-stone-300 mt-1 leading-none">
@@ -1391,7 +1391,7 @@ function ContenuAdmin() {
 
                   <div>
                     <label className="block text-xs font-bold text-stone-700 mb-1">
-                      🛡️ Réservations simultanées par cliente :
+                      🛡️ Réservations simultanées par client :
                     </label>
                     <select
                       value={maxArticles}
@@ -1467,7 +1467,7 @@ function ContenuAdmin() {
                         rows={2}
                         value={messagePause}
                         onChange={(e) => setMessagePause(e.target.value)}
-                        placeholder="Message affiché aux clientes..."
+                        placeholder="Message affiché aux clients..."
                         className="w-full border border-stone-300 rounded-xl p-2 text-xs text-stone-900"
                       />
                     )}

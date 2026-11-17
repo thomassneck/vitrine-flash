@@ -136,11 +136,11 @@ export async function POST(request) {
         html: `
           <div style="font-family: sans-serif; max-width: 500px; padding: 20px;">
             <h2 style="color: #1c1917;">Nouvelle pièce mise de côté ! ✨</h2>
-            <p>Une cliente vient de bloquer un article pour <strong>${boutique.nom}</strong> :</p>
+            <p>Un client vient de bloquer un article pour <strong>${boutique.nom}</strong> :</p>
             <ul>
               <li><strong>Article :</strong> ${article.titre} (${article.taille}) - ${article.prix} €</li>
               <li><strong>Pointure / Taille souhaitée :</strong> ${taille_souhaitee ? taille_souhaitee.trim() : 'Non précisée'}</li>
-              <li><strong>Cliente :</strong> ${prenom}</li>
+              <li><strong>Client :</strong> ${prenom}</li>
               <li><strong>Téléphone :</strong> <a href="tel:${telNettoye}">${telNettoye}</a></li>
               <li><strong>Référence :</strong> #${codeResa}</li>
               <li><strong>Bloqué jusqu'à :</strong> ${heureFin}</li>
