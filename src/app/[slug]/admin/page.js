@@ -321,37 +321,44 @@ function ContenuAdmin() {
     setPublicationEnCours(true);
 
     try {
+      // 1. Compression de l'image (si vous utilisez toujours la fonction compresserPhoto)
       const imageCompressee = await compresserPhoto(fichierPhoto);
       const cheminFichier = `${boutique.slug}/${imageCompressee.name}`;
 
+      // 2. Upload de l'image sur Supabase Storage (DEPUIS LE FRONTEND)
       const { error: uploadError } = await supabase.storage
         .from("photos-vitrine")
         .upload(cheminFichier, imageCompressee);
 
       if (uploadError) throw uploadError;
 
+      // 3. Récupération de l'URL publique de l'image
       const { data: urlData } = supabase.storage
         .from("photos-vitrine")
         .getPublicUrl(cheminFichier);
 
+      // 4. Appel de la route API sécurisée pour CRÉER l'article en BDD
       const response = await fetch("/api/articles/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           boutiqueId: boutique.id,
-          motDePasse: motDePasseSaisi,
+          motDePasse: motDePasseSaisi, // ou boutique.mot_de_passe_admin selon votre logique d'auth
           titre: titre.trim(),
+          description: "", // Ajoutez un champ description si votre backend l'exige
           taille: taille.trim(),
           prix: parseFloat(prix),
-          imageUrl: urlData.publicUrl,
+          imageUrl: urlData.publicUrl, // <--- C'est CETTE url textuelle qui est envoyée au backend JSON
         }),
       });
 
       const result = await response.json();
+      
       if (!response.ok) {
         throw new Error(result.error || "Erreur lors de la création de l'article");
       }
 
+      // Succès : on réinitialise le formulaire
       setTitre("");
       setPrix("");
       setTaille("Unique");
@@ -359,6 +366,7 @@ function ContenuAdmin() {
       setApercuPhoto(null);
       setModaleAjout(false);
       await chargerDonneesAdmin();
+      
     } catch (err) {
       alert("Erreur lors de l'envoi : " + err.message);
     } finally {
@@ -670,33 +678,49 @@ function ContenuAdmin() {
           </span>
           <h1 className="text-lg font-bold">{boutique.nom}</h1>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1 shrink-0">
+          {/* 1. BOUTON BILAN */}
           <button
             onClick={() => setModaleCloture(true)}
-            className="text-xs bg-stone-800 hover:bg-stone-700 text-amber-300 font-semibold px-2.5 py-2 rounded-xl border border-stone-700 cursor-pointer flex items-center gap-1"
+            className="relative flex flex-col items-center justify-center w-14 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700/80 transition active:scale-95 cursor-pointer"
             title="Bilan du soir : pièces à remettre en rayon"
           >
-            <span>🌙</span> Bilan
+            <span className="text-sm leading-none">🌙</span>
+            <span className="text-[10px] font-medium text-amber-300 mt-1 leading-none">
+              Bilan
+            </span>
+
+            {/* Pastille compteur discrète posée en haut à droite */}
             {articlesNonRetires.length > 0 && (
-              <span className="bg-amber-500 text-stone-950 text-[10px] font-extrabold px-1.5 py-0.2 rounded-full">
+              <span className="absolute -top-1 -right-1 bg-amber-500 text-stone-950 text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center shadow-xs">
                 {articlesNonRetires.length}
               </span>
             )}
           </button>
 
+          {/* 2. BOUTON RÉGLAGES */}
           <button
             onClick={() => setModaleReglages(true)}
-            className="text-xs bg-stone-800 hover:bg-stone-700 text-amber-400 font-semibold px-2.5 py-2 rounded-xl border border-stone-700 cursor-pointer"
+            className="flex flex-col items-center justify-center w-14 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700/80 transition active:scale-95 cursor-pointer"
+            title="Réglages de la boutique"
           >
-            ⚙️ Réglages
+            <span className="text-sm leading-none">⚙️</span>
+            <span className="text-[10px] font-medium text-amber-400 mt-1 leading-none">
+              Réglages
+            </span>
           </button>
 
+          {/* 3. BOUTON VITRINE */}
           <a
             href={`/${boutique.slug}`}
             target="_blank"
-            className="text-xs bg-stone-800 hover:bg-stone-700 text-stone-200 px-2.5 py-2 rounded-xl border border-stone-700"
+            className="flex flex-col items-center justify-center w-14 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700/80 transition active:scale-95"
+            title="Ouvrir la vitrine cliente"
           >
-            👁️ Vitrine
+            <span className="text-sm leading-none">👁️</span>
+            <span className="text-[10px] font-medium text-stone-300 mt-1 leading-none">
+              Vitrine
+            </span>
           </a>
         </div>
       </header>
@@ -838,8 +862,9 @@ function ContenuAdmin() {
                 <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
                   {articlesNonRetires.map((art) => {
                     const resa = reservations.find((r) => r.article_id === art.id);
+                    const dateRef = resa?.created_at || art.updated_at || art.created_at;
                     const echeance = verifierEcheanceResa(
-                      resa?.created_at,
+                      dateRef,
                       boutique?.heure_fermeture_soir || "18h30"
                     );
 
@@ -898,26 +923,41 @@ function ContenuAdmin() {
                   })}
                 </div>
 
-                {(() => {
-                  const expires = articlesNonRetires.filter((art) => {
-                    const resa = reservations.find((r) => r.article_id === art.id);
-                    return verifierEcheanceResa(
-                      resa?.created_at,
-                      boutique?.heure_fermeture_soir || "18h30"
-                    ).depassee;
-                  });
+                {/* ZONE DES BOUTONS DE REMISE GLOBALE EN RAYON */}
+                <div className="space-y-2 pt-2 border-t border-stone-100">
+                  {/* Bouton pour tout remettre en rayon d'un coup */}
+                  <button
+                    onClick={() => libererTousLesArticles(articlesNonRetires)}
+                    className="w-full bg-stone-900 hover:bg-stone-800 text-white font-extrabold text-xs py-3 rounded-xl shadow-xs transition active:scale-98 cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <span>📦</span> Remettre tout en rayon ({articlesNonRetires.length} pièces)
+                  </button>
 
-                  if (expires.length === 0) return null;
+                  {/* Bouton secondaire si des pièces sont spécifiquement expirées */}
+                  {(() => {
+                    const expires = articlesNonRetires.filter((art) => {
+                      const resa = reservations.find((r) => r.article_id === art.id);
+                      const dateRef = resa?.created_at || art.updated_at || art.created_at;
+                      return verifierEcheanceResa(
+                        dateRef,
+                        boutique?.heure_fermeture_soir || "18h30"
+                      ).depassee;
+                    });
 
-                  return (
-                    <button
-                      onClick={() => libererTousLesArticles(expires)}
-                      className="w-full bg-red-600 hover:bg-red-700 text-white font-extrabold text-xs py-3 rounded-xl shadow-xs transition active:scale-98 cursor-pointer mt-2"
-                    >
-                      ✨ Remettre en vitrine les {expires.length} pièce(s) expirée(s)
-                    </button>
-                  );
-                })()}
+                    if (expires.length === 0 || expires.length === articlesNonRetires.length) {
+                      return null;
+                    }
+
+                    return (
+                      <button
+                        onClick={() => libererTousLesArticles(expires)}
+                        className="w-full bg-red-50 hover:bg-red-100 text-red-700 font-bold text-xs py-2 rounded-xl transition cursor-pointer"
+                      >
+                        ⏰ Remettre uniquement les {expires.length} pièce(s) expirée(s)
+                      </button>
+                    );
+                  })()}
+                </div>
               </div>
             )}
           </div>

@@ -1,23 +1,24 @@
-// src/app/api/articles/create/route.js
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { boutiqueId, motDePasse, titre, description, prix, imageUrl } = body;
+    const { boutiqueId, motDePasse, titre, taille, prix, imageUrl } = body;
 
-    if (!boutiqueId || !motDePasse || !titre) {
+    // 1. motDePasse n'est plus bloquant ici, on vérifie juste boutiqueId et titre
+    if (!boutiqueId || !titre) {
       return NextResponse.json(
         { error: "Paramètres obligatoires manquants" },
         { status: 400 }
       );
     }
 
-    // 1. Contrôle du mot de passe admin de la boutique
+    // 2. Récupération de la boutique
     const { data: boutique, error: boutiqueError } = await supabaseAdmin
       .from("boutiques")
-      .select("id, mot_de_passe_admin")
+      .select("id, slug, mot_de_passe_admin")
       .eq("id", boutiqueId)
       .single();
 
@@ -28,22 +29,29 @@ export async function POST(request) {
       );
     }
 
-    if (boutique.mot_de_passe_admin !== motDePasse) {
+    // 3. Double vérification d'authentification (Cookie OU Mot de passe)
+    const cookieStore = await cookies();
+    const sessionCookie = cookieStore.get(`admin_session_${boutique.slug}`);
+
+    const estAuthentifieParCookie = sessionCookie?.value === boutique.id;
+    const estAuthentifieParMdp = motDePasse && motDePasse === boutique.mot_de_passe_admin;
+
+    if (!estAuthentifieParCookie && !estAuthentifieParMdp) {
       return NextResponse.json(
-        { error: "Mot de passe administrateur incorrect" },
+        { error: "Action non autorisée. Veuillez vous reconnecter." },
         { status: 401 }
       );
     }
 
-    // 2. Création de l'article avec contournement sécurisé du RLS
+    // 4. Création de l'article (contourne RLS)
     const { data: nouvelArticle, error: insertError } = await supabaseAdmin
       .from("articles")
       .insert({
         boutique_id: boutiqueId,
         titre,
-        description,
+        taille,
         prix,
-        image_url: imageUrl,
+        photo_url: imageUrl,
       })
       .select()
       .single();
