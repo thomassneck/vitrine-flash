@@ -1,7 +1,7 @@
-// src/app/api/articles/statut/route.js
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { notifierPremiereEnAttente } from "@/lib/alerteAttente";
 
 export async function POST(request) {
   try {
@@ -42,29 +42,27 @@ export async function POST(request) {
       return NextResponse.json({ error: updateError.message }, { status: 500 });
     }
 
-    // 3. Si l'article redevient disponible : annuler la réservation et avertir
+    // 3. Si l'article redevient disponible : annuler la réservation et notifier la file d'attente
     if (nouveauStatut === "disponible") {
       await supabaseAdmin
         .from("reservations")
         .update({ statut: "annulee" })
         .eq("article_id", articleId);
 
-      // Notification file d'attente (optionnel)
+      // Exécution directe et attendue pour que Vercel ne coupe pas l'envoi Resend
       try {
-        const origin = new URL(request.url).origin;
-        fetch(`${origin}/api/articles/liberer`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ article_id: articleId }),
-        });
+        await notifierPremiereEnAttente(articleId);
       } catch (errLiberer) {
-        console.error("Erreur déclenchement alerte libération :", errLiberer);
+        console.error("Erreur notification liste d'attente :", errLiberer);
       }
     }
 
     return NextResponse.json({ succes: true });
   } catch (err) {
     console.error("Erreur API statut article :", err);
-    return NextResponse.json({ error: err.message || "Erreur interne" }, { status: 500 });
+    return NextResponse.json(
+      { error: err.message || "Erreur interne" },
+      { status: 500 }
+    );
   }
 }
