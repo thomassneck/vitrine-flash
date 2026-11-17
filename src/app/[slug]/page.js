@@ -457,7 +457,7 @@ function ContenuVitrine() {
                   {articleSelectionne.taille} • {formaterPrix(articleSelectionne.prix)} €
                 </p>
                 <p className="text-stone-500">
-                  Mise de côté en cabine jusqu'à la fermeture ({boutique?.heure_fermeture_soir || "18h30"}).
+                  Mise de côté jusqu'à la fermeture ({boutique?.heure_fermeture_soir || "18h30"}).
                 </p>
               </div>
             </div>
@@ -592,7 +592,7 @@ function ContenuVitrine() {
             </div>
 
             <p className="text-xs text-stone-500 mb-4">
-              L'article <strong>{articleAttente.titre}</strong> est actuellement en cabine. Laissez votre e-mail pour recevoir une notification prioritaire s'il revient en vitrine.
+              L'article <strong>{articleAttente.titre}</strong> est actuellement réservé. Laissez votre e-mail pour recevoir une notification prioritaire s'il revient en vitrine.
             </p>
 
             <form onSubmit={validerListeAttente} className="space-y-3">

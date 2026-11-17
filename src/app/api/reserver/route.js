@@ -108,8 +108,8 @@ export async function POST(request) {
         .eq('id', article_id);
 
       const messageErreur = limiteMax === 1
-        ? "Vous avez déjà une pièce mise de côté en cabine ! Venez l'essayer avant d'en réserver une autre 😊"
-        : `Vous avez déjà atteint votre limite de ${limiteMax} articles réservés en cabine !`;
+        ? "Vous avez déjà une pièce mise de côté ! Venez l'essayer avant d'en réserver une autre 😊"
+        : `Vous avez déjà atteint votre limite de ${limiteMax} articles réservés !`;
 
       return NextResponse.json({ error: messageErreur }, { status: 400 });
     }

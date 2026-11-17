@@ -101,10 +101,10 @@ function ContenuAffiche() {
             </div>
             <div>
               <span className="text-xs font-black bg-amber-300 text-stone-950 px-2 py-0.5 rounded-md">
-                3. ESSAYEZ
+                3. RETIREZ/ESSAYEZ
               </span>
               <p className="text-xs text-stone-600 mt-1">
-                Elle vous attend de côté en cabine chez <strong>{boutique.nom}</strong> !
+                Elle vous attend, mise de côté chez <strong>{boutique.nom}</strong> !
               </p>
             </div>
           </div>
@@ -145,7 +145,7 @@ function ContenuAffiche() {
                 ⏱️ Fini les 15 DM Instagram pour la même pièce
               </p>
               <p className="text-stone-600 leading-relaxed">
-                La 1ère cliente qui clique bloque la pépite jusqu'à 18h et t'envoie un SMS pré-rempli. L'article affiche <em>"Déjà en cabine"</em> pour les suivantes.
+                La 1ère cliente qui clique bloque l'article jusqu'à une certaine heure (définie par le système en fonction de l'heure de réservation) et t'envoie un SMS pré-rempli. L'article affiche <em>"Déjà réservé"</em> pour les suivantes.
               </p>
             </div>
           </div>
