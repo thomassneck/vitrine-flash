@@ -41,10 +41,10 @@ CREATE TABLE reservations (
   prenom_cliente TEXT NOT NULL,        -- ex: 'Julie'
   telephone_cliente TEXT,              -- Optionnel (pour la liste d'attente)
   canal TEXT DEFAULT 'sms',            -- 'sms' ou 'whatsapp'
-  -- Statuts : 'attente_sms', 'validee_cabine', 'liste_attente', 'honoree', 'annulee'
+  -- Statuts : 'attente_sms', 'validee', 'liste_attente', 'honoree', 'annulee'
   statut TEXT NOT NULL DEFAULT 'attente_sms',
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  taille_souhaitee TEXT
+  motif_annulation TEXT DEFAULT 'libere' -- Valeurs possibles : 'libere' (essayé, pas acheté) ou 'no_show' (non honoré)
 );
 
 CREATE TABLE liste_attente (
@@ -83,33 +83,29 @@ DECLARE
   compteur_no_shows INT;
   id_boutique UUID;
 BEGIN
-  -- Se déclenche uniquement si la réservation passe en 'annulee' ou 'expiree'
-  IF (NEW.statut IN ('annulee', 'expiree')) AND (OLD.statut IS DISTINCT FROM NEW.statut) THEN
+  -- On déclenche UNIQUEMENT si le statut passe à 'annulee' AVEC le motif 'no_show'
+  IF (NEW.statut = 'annulee' AND NEW.motif_annulation = 'no_show') 
+     AND (OLD.statut IS DISTINCT FROM NEW.statut) THEN
     
-    -- Récupérer la boutique_id liée à l'article réservé
-    SELECT boutique_id INTO id_boutique 
-    FROM articles 
-    WHERE id = NEW.article_id;
+    SELECT boutique_id INTO id_boutique FROM articles WHERE id = NEW.article_id;
 
-    -- Compter combien de réservations non honorées compte ce numéro sur cette boutique
     SELECT COUNT(*) INTO compteur_no_shows
     FROM reservations r
     JOIN articles a ON a.id = r.article_id
     WHERE a.boutique_id = id_boutique
       AND r.telephone_cliente = NEW.telephone_cliente
-      AND r.statut IN ('annulee', 'expiree');
+      AND r.motif_annulation = 'no_show';
 
-    -- Seuil de 2 no-shows atteint : inscription automatique
+    -- Au 2ème no show avéré : blocage automatique
     IF compteur_no_shows >= 2 AND NEW.telephone_cliente IS NOT NULL THEN
       INSERT INTO numeros_bloques (boutique_id, telephone, motif)
       VALUES (
         id_boutique, 
         NEW.telephone_cliente, 
-        'Blocage automatique : 2 réservations consécutives non honorées'
+        'Blocage auto : 2 réservations non honorées'
       )
       ON CONFLICT (boutique_id, telephone) DO NOTHING;
     END IF;
-
   END IF;
 
   RETURN NEW;

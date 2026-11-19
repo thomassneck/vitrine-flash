@@ -173,52 +173,39 @@ function ContenuAdmin() {
   }, [slug]);
 
   // Chargement des données sans exposer mot_de_passe_admin
-  const chargerDonneesAdmin = async () => {
-    const { data: dataBoutique } = await supabase
-      .from("boutiques")
-      .select("id, slug, nom, telephone_pro, email, max_articles_par_cliente, heure_fermeture_soir, en_pause, message_pause, message_annonce, jours_fermeture")
-      .eq("slug", slug)
-      .maybeSingle();
+const chargerDonneesAdmin = async () => {
+    try {
+      const res = await fetch(`/api/admin/donnees?slug=${slug}`);
+      const data = await res.json();
 
-    if (dataBoutique) {
-      setBoutique(dataBoutique);
-      setNouveauTel(dataBoutique.telephone_pro || "");
-      setNouveauMdp(""); // Laissé vide par sécurité
-      setNouvelEmail(dataBoutique.email || "");
-      setMaxArticles(dataBoutique.max_articles_par_cliente || 1);
-      setHeureSoir(dataBoutique.heure_fermeture_soir || "18h30");
-      setEnPause(dataBoutique.en_pause || false);
-      setMessagePause(
-        dataBoutique.message_pause ||
-          "La boutique est actuellement fermée pour congés. Les réservations sont temporairement suspendues."
-      );
-      setMessageAnnonce(dataBoutique.message_annonce || "");
-      setJoursFermeture(
-        Array.isArray(dataBoutique.jours_fermeture) ? dataBoutique.jours_fermeture : [0, 1]
-      );
-
-      const { data: dataArticles } = await supabase
-        .from("articles")
-        .select("*")
-        .eq("boutique_id", dataBoutique.id)
-        .neq("statut", "vendu")
-        .order("created_at", { ascending: false });
-
-      setArticles(dataArticles || []);
-
-      if (dataArticles && dataArticles.length > 0) {
-        const idsArticles = dataArticles.map((a) => a.id);
-        const { data: dataResa } = await supabase
-          .from("reservations")
-          .select("*")
-          .in("article_id", idsArticles)
-          .neq("statut", "annulee")
-          .order("created_at", { ascending: false });
-
-        setReservations(dataResa || []);
+      if (data.boutique) {
+        const dataBoutique = data.boutique;
+        setBoutique(dataBoutique);
+        setNouveauTel(dataBoutique.telephone_pro || "");
+        setNouveauMdp("");
+        setNouvelEmail(dataBoutique.email || "");
+        setMaxArticles(dataBoutique.max_articles_par_cliente || 1);
+        setHeureSoir(dataBoutique.heure_fermeture_soir || "18h30");
+        setEnPause(dataBoutique.en_pause || false);
+        setMessagePause(
+          dataBoutique.message_pause ||
+            "La boutique est actuellement fermée pour congés. Les réservations sont temporairement suspendues."
+        );
+        setMessageAnnonce(dataBoutique.message_annonce || "");
+        setJoursFermeture(
+          Array.isArray(dataBoutique.jours_fermeture) ? dataBoutique.jours_fermeture : [0, 1]
+        );
       }
+
+      if (res.ok) {
+        setArticles(data.articles || []);
+        setReservations(data.reservations || []);
+      }
+    } catch (err) {
+      console.error("Erreur chargement données admin :", err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {

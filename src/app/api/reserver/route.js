@@ -34,8 +34,9 @@ function calculerHeureMaxDynamique(joursFermeture = [0, 1], heureSoir = "18h30")
 
 export async function POST(request) {
   try {
-    const { article_id, prenom, telephone, canal, taille_souhaitee } = await request.json();
+    const { article_id, prenom, telephone, canal } = await request.json();
 
+    // 1. Validation du mobile
     const telNettoye = telephone ? telephone.toString().replace(/[\s.-]/g, "") : "";
     const regexMobileFr = /^0[67]\d{8}$/;
 
@@ -50,6 +51,7 @@ export async function POST(request) {
       );
     }
 
+    // 2. Bloquer l'article et récupérer les réglages de la boutique
     const { data: article, error: updateError } = await supabaseAdmin
       .from('articles')
       .update({ statut: 'confirme' })
@@ -69,6 +71,7 @@ export async function POST(request) {
     const boutique = article.boutiques;
     const limiteMax = boutique?.max_articles_par_cliente || 1;
 
+    // 3. Vérification du mode congés / pause
     if (boutique?.en_pause) {
       await supabaseAdmin
         .from('articles')
@@ -81,12 +84,13 @@ export async function POST(request) {
       );
     }
 
+    // 4. Contrôle du quota par numéro de téléphone pour cette boutique
     const { data: resasEnCours, error: verifError } = await supabaseAdmin
       .from('reservations')
       .select('id, article_id, articles!inner(boutique_id)')
       .eq('telephone_cliente', telNettoye)
       .eq('articles.boutique_id', boutique.id)
-      .in('statut', ['validee_cabine', 'attente_sms']);
+      .in('statut', ['validee_cabine', 'attente_sms', 'confirme']);
 
     if (verifError) {
       console.error("Erreur vérification quota:", verifError);
@@ -111,13 +115,13 @@ export async function POST(request) {
       boutique?.heure_fermeture_soir
     );
 
+    // 5. Enregistrement de la réservation (sans taille_souhaitee)
     const { error: insertError } = await supabaseAdmin.from('reservations').insert({
       code_resa: codeResa,
       article_id,
       prenom_cliente: prenom.trim(),
       telephone_cliente: telNettoye,
       canal: canal || 'web',
-      taille_souhaitee: taille_souhaitee ? taille_souhaitee.trim() : null,
       statut: 'validee_cabine'
     });
 
@@ -125,7 +129,7 @@ export async function POST(request) {
       console.error("Erreur insert reservation Supabase:", insertError);
     }
 
-    // Envoi email Resend avec domaine vérifié proxi-saas.fr et log explicite
+    // 6. Envoi email Resend
     if (process.env.RESEND_API_KEY && boutique?.email) {
       const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -136,11 +140,10 @@ export async function POST(request) {
         html: `
           <div style="font-family: sans-serif; max-width: 500px; padding: 20px;">
             <h2 style="color: #1c1917;">Nouvelle pièce mise de côté ! ✨</h2>
-            <p>Un client vient de bloquer un article pour <strong>${boutique.nom}</strong> :</p>
+            <p>Une cliente vient de bloquer un article pour <strong>${boutique.nom}</strong> :</p>
             <ul>
               <li><strong>Article :</strong> ${article.titre} (${article.taille}) - ${article.prix} €</li>
-              <li><strong>Pointure / Taille souhaitée :</strong> ${taille_souhaitee ? taille_souhaitee.trim() : 'Non précisée'}</li>
-              <li><strong>Client :</strong> ${prenom}</li>
+              <li><strong>Cliente :</strong> ${prenom}</li>
               <li><strong>Téléphone :</strong> <a href="tel:${telNettoye}">${telNettoye}</a></li>
               <li><strong>Référence :</strong> #${codeResa}</li>
               <li><strong>Bloqué jusqu'à :</strong> ${heureFin}</li>
