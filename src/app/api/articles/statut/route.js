@@ -1,3 +1,4 @@
+// src/app/api/articles/statut/route.js
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
@@ -5,7 +6,7 @@ import { notifierPremiereEnAttente } from "@/lib/alerteAttente";
 
 export async function POST(request) {
   try {
-    const { articleId, nouveauStatut, slug } = await request.json();
+    const { articleId, nouveauStatut, motifAnnulation, slug } = await request.json();
 
     if (!articleId || !nouveauStatut || !slug) {
       return NextResponse.json(
@@ -42,14 +43,22 @@ export async function POST(request) {
       return NextResponse.json({ error: updateError.message }, { status: 500 });
     }
 
-    // 3. Si l'article redevient disponible : annuler la réservation et notifier la file d'attente
+    // 3. Si l'article redevient disponible : annuler la réservation active avec son motif et avertir la file d'attente
     if (nouveauStatut === "disponible") {
-      await supabaseAdmin
+      const { error: resaError } = await supabaseAdmin
         .from("reservations")
-        .update({ statut: "annulee" })
-        .eq("article_id", articleId);
+        .update({
+          statut: "annulee",
+          motif_annulation: motifAnnulation || "libere",
+        })
+        .eq("article_id", articleId)
+        .neq("statut", "annulee"); // Ne modifie que la réservation en cours, pas les anciennes déjà annulées
 
-      // Exécution directe et attendue pour que Vercel ne coupe pas l'envoi Resend
+      if (resaError) {
+        console.error("Erreur mise à jour réservation :", resaError);
+      }
+
+      // Exécution directe pour que Vercel ne coupe pas l'envoi d'e-mail
       try {
         await notifierPremiereEnAttente(articleId);
       } catch (errLiberer) {

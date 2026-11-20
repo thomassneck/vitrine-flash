@@ -13,7 +13,7 @@ export async function GET(request) {
   const { data: boutique, error: boutiqueError } = await supabaseAdmin
     .from("boutiques")
     .select(
-      "id, slug, nom, telephone_pro, email, max_articles_par_cliente, heure_fermeture_soir, en_pause, message_pause, message_annonce, jours_fermeture"
+      "id, slug, nom, telephone_pro, email, max_articles_par_client, heure_fermeture_soir, en_pause, message_pause, message_annonce, jours_fermeture"
     )
     .eq("slug", slug)
     .maybeSingle();

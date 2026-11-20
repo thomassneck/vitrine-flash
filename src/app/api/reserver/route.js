@@ -57,7 +57,7 @@ export async function POST(request) {
       .update({ statut: 'confirme' })
       .eq('id', article_id)
       .eq('statut', 'disponible')
-      .select('titre, taille, prix, boutiques(id, nom, email, telephone_pro, jours_fermeture, heure_fermeture_soir, max_articles_par_cliente, en_pause, message_pause)')
+      .select('titre, taille, prix, boutiques(id, nom, email, telephone_pro, jours_fermeture, heure_fermeture_soir, max_articles_par_client, en_pause, message_pause)')
       .single();
 
     if (updateError || !article) {
@@ -69,7 +69,7 @@ export async function POST(request) {
     }
 
     const boutique = article.boutiques;
-    const limiteMax = boutique?.max_articles_par_cliente || 1;
+    const limiteMax = boutique?.max_articles_par_client || 1;
 
     // 3. Vérification du mode congés / pause
     if (boutique?.en_pause) {
@@ -119,8 +119,8 @@ export async function POST(request) {
     const { error: insertError } = await supabaseAdmin.from('reservations').insert({
       code_resa: codeResa,
       article_id,
-      prenom_cliente: prenom.trim(),
-      telephone_cliente: telNettoye,
+      prenom_client: prenom.trim(),
+      telephone_client: telNettoye,
       canal: canal || 'web',
       statut: 'validee_cabine'
     });

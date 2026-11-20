@@ -184,7 +184,7 @@ const chargerDonneesAdmin = async () => {
         setNouveauTel(dataBoutique.telephone_pro || "");
         setNouveauMdp("");
         setNouvelEmail(dataBoutique.email || "");
-        setMaxArticles(dataBoutique.max_articles_par_cliente || 1);
+        setMaxArticles(dataBoutique.max_articles_par_client || 1);
         setHeureSoir(dataBoutique.heure_fermeture_soir || "18h30");
         setEnPause(dataBoutique.en_pause || false);
         setMessagePause(
@@ -362,7 +362,7 @@ const chargerDonneesAdmin = async () => {
   };
 
   // 5. Changer le statut d'un article via route API sécurisée
-  const changerStatutArticle = async (articleId, nouveauStatut) => {
+  const changerStatutArticle = async (articleId, nouveauStatut, motifAnnulation = "libere") => {
     try {
       const res = await fetch("/api/articles/statut", {
         method: "POST",
@@ -370,6 +370,7 @@ const chargerDonneesAdmin = async () => {
         body: JSON.stringify({
           articleId,
           nouveauStatut,
+          motifAnnulation,
           slug,
         }),
       });
@@ -755,14 +756,36 @@ const chargerDonneesAdmin = async () => {
                       <p className="font-bold text-amber-900">
                         🔒 Réservé par {resa.prenom_cliente} (#{resa.code_resa})
                       </p>
-                      {resa.telephone_cliente && (
-                        <a
-                          href={`tel:${resa.telephone_cliente}`}
-                          className="text-amber-700 underline font-medium block mt-0.5"
-                        >
-                          📞 {resa.telephone_cliente}
-                        </a>
-                      )}
+                      <div className="flex items-center justify-between gap-2 mt-0.5">
+                        {resa.telephone_client && (
+                          <a
+                            href={`tel:${resa.telephone_client}`}
+                            className="text-amber-700 underline font-medium"
+                          >
+                            📞 {resa.telephone_client}
+                          </a>
+                        )}
+
+                        {/* Lien discret pour signaler une réservation non honorée */}
+                        {resa.telephone_client && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (
+                                confirm(
+                                  `Signaler que ${resa.prenom_client} (${resa.telephone_client}) n'est pas venu honorer sa réservation ?`
+                                )
+                              ) {
+                                changerStatutArticle(article.id, "disponible", "no_show");
+                              }
+                            }}
+                            className="text-[11px] text-red-600 hover:text-red-800 font-bold underline cursor-pointer"
+                            title="La personne n'est pas venue : remettre en rayon et enregistrer un no-show"
+                          >
+                            🚫 No-show
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ) : (
                     <p className="text-xs text-emerald-600 font-semibold mt-2">
@@ -890,7 +913,7 @@ const chargerDonneesAdmin = async () => {
                           <p className="text-[11px] text-stone-600 font-medium truncate mt-0.5">
                             👤{" "}
                             {resa
-                              ? `${resa.prenom_cliente} (${resa.telephone_cliente || "Sans tél"})`
+                              ? `${resa.prenom_client} (${resa.telephone_client || "Sans tél"})`
                               : "Réservation active"}
                           </p>
                         </div>

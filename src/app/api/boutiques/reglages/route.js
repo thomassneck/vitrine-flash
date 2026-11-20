@@ -61,7 +61,7 @@ export async function POST(request) {
     const champsMaj = {
       telephone_pro: telFormate,
       email: email ? email.trim() : null,
-      max_articles_par_cliente: parseInt(maxArticles, 10) || 1,
+      max_articles_par_client: parseInt(maxArticles, 10) || 1,
       heure_fermeture_soir: heureSoir || "18h30",
       en_pause: Boolean(enPause),
       message_pause: messagePause ? messagePause.trim() : null,

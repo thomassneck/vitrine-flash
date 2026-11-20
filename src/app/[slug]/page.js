@@ -67,7 +67,7 @@ function ContenuVitrine() {
       slug,
       telephone_pro,
       email,
-      max_articles_par_cliente,
+      max_articles_par_client,
       heure_fermeture_soir,
       en_pause,
       message_pause,

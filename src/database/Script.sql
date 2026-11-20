@@ -6,7 +6,7 @@ CREATE TABLE boutiques (
   telephone_pro TEXT NOT NULL,         -- ex: '+33612345678' (le 06 de Marion qui reçoit le SMS/WhatsApp)
   email TEXT,
   mot_de_passe_admin TEXT NOT NULL,    -- Code simple ou hash pour l'accès vendeuse
-  max_articles_par_cliente INT DEFAULT 1,
+  max_articles_par_client INT DEFAULT 1,
   en_pause BOOLEAN DEFAULT false,
   message_pause TEXT DEFAULT 'La boutique est actuellement fermée pour congés. Les réservations sont temporairement suspendues.',
   message_annonce TEXT DEFAULT NULL;
@@ -38,13 +38,13 @@ CREATE TABLE reservations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   code_resa TEXT UNIQUE NOT NULL,      -- ex: 'BM-402' (affiché dans le SMS de la cliente)
   article_id UUID REFERENCES articles(id) ON DELETE CASCADE,
-  prenom_cliente TEXT NOT NULL,        -- ex: 'Julie'
-  telephone_cliente TEXT,              -- Optionnel (pour la liste d'attente)
+  prenom_client TEXT NOT NULL,        -- ex: 'Julie'
+  telephone_client TEXT,              -- Optionnel (pour la liste d'attente)
   canal TEXT DEFAULT 'sms',            -- 'sms' ou 'whatsapp'
   -- Statuts : 'attente_sms', 'validee', 'liste_attente', 'honoree', 'annulee'
   statut TEXT NOT NULL DEFAULT 'attente_sms',
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  motif_annulation TEXT DEFAULT 'libere' -- Valeurs possibles : 'libere' (essayé, pas acheté) ou 'no_show' (non honoré)
+  motif_annulation TEXT -- Valeurs possibles : 'libere' (essayé, pas acheté) ou 'no_show' (non honoré)
 );
 
 CREATE TABLE liste_attente (
@@ -159,7 +159,7 @@ GRANT SELECT (
   slug,
   telephone_pro,
   email,
-  max_articles_par_cliente,
+  max_articles_par_client,
   heure_fermeture_soir,
   en_pause,
   message_pause,
