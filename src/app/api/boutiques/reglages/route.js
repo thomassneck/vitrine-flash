@@ -17,6 +17,7 @@ export async function POST(request) {
       messagePause,
       messageAnnonce,
       joursFermeture,
+      maxNoShows,
     } = await request.json();
 
     if (!slug) {
@@ -67,6 +68,7 @@ export async function POST(request) {
       message_pause: messagePause ? messagePause.trim() : null,
       message_annonce: messageAnnonce ? messageAnnonce.trim() : null,
       jours_fermeture: Array.isArray(joursFermeture) ? joursFermeture : [0, 1],
+      max_no_shows: maxNoShows !== undefined ? parseInt(maxNoShows, 10) : 2,
     };
 
     // Mise à jour du mot de passe uniquement s'il a été renseigné

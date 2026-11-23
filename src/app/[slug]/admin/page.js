@@ -35,13 +35,21 @@ async function compresserPhoto(file) {
 }
 
 // Détermine l'échéance exacte avec date calendaire lisible
-function verifierEcheanceResa(dateCreationISO, heureClotureBoutique = "18h30") {
+function verifierEcheanceResa(
+  dateCreationISO,
+  heureClotureBoutique = "18h30",
+  joursFermeture = [0, 1]
+) {
   if (!dateCreationISO) return { depassee: true, libelle: "Heure limite atteinte" };
 
   const dateResa = new Date(dateCreationISO);
   const dateResaFr = new Date(dateResa.toLocaleString("en-US", { timeZone: "Europe/Paris" }));
   const heure = dateResaFr.getHours();
-  const jour = dateResaFr.getDay();
+  const jour = dateResaFr.getDay(); // 0 = Dimanche, 1 = Lundi, ..., 6 = Samedi
+
+  // On utilise le tableau paramétré de la boutique (repli sur [0, 1] uniquement si absent)
+  const fermetures = Array.isArray(joursFermeture) ? joursFermeture : [0, 1];
+  const estFermeCeJourLa = fermetures.includes(jour);
 
   const [hStr, mStr] = (heureClotureBoutique || "18h30").toLowerCase().split("h");
   const hCloture = parseInt(hStr, 10) || 18;
@@ -49,24 +57,21 @@ function verifierEcheanceResa(dateCreationISO, heureClotureBoutique = "18h30") {
 
   const dateEcheance = new Date(dateResaFr);
 
-  // 1. Réservé le matin (< 14h) en semaine d'ouverture : expire le jour même au soir
-  if (heure < 14 && jour !== 0 && jour !== 1) {
+  // Cas 1 : Réservé le matin (< 14h) un jour où la boutique est OUVERTE
+  if (heure < 14 && !estFermeCeJourLa) {
     dateEcheance.setHours(hCloture, mCloture, 0, 0);
   }
-  // 2. Samedi après-midi ou Dimanche : expire mardi à 14h00
-  else if (jour === 0 || (jour === 6 && heure >= 14)) {
-    const joursRestants = jour === 0 ? 2 : 3;
-    dateEcheance.setDate(dateEcheance.getDate() + joursRestants);
-    dateEcheance.setHours(14, 0, 0, 0);
-  }
-  // 3. Lundi (fermeture) : expire mardi au soir
-  else if (jour === 1) {
-    dateEcheance.setDate(dateEcheance.getDate() + 1);
-    dateEcheance.setHours(hCloture, mCloture, 0, 0);
-  }
-  // 4. Après 14h ou soirée : expire le lendemain à 14h00
+  // Cas 2 : Réservé l'après-midi, le soir, ou un jour FERMÉ -> on cherche le prochain jour d'ouverture
   else {
-    dateEcheance.setDate(dateEcheance.getDate() + 1);
+    let joursAjoutes = 1;
+    let prochainJour = (jour + 1) % 7;
+
+    while (fermetures.includes(prochainJour) && joursAjoutes < 7) {
+      joursAjoutes++;
+      prochainJour = (prochainJour + 1) % 7;
+    }
+
+    dateEcheance.setDate(dateEcheance.getDate() + joursAjoutes);
     dateEcheance.setHours(14, 0, 0, 0);
   }
 
@@ -80,11 +85,8 @@ function verifierEcheanceResa(dateCreationISO, heureClotureBoutique = "18h30") {
   const hFin = dateEcheance.getHours().toString().padStart(2, "0");
   const mFin = dateEcheance.getMinutes().toString().padStart(2, "0");
 
-  const maintenant = new Date();
-  const estDepassee = maintenant > dateEcheance;
-
   return {
-    depassee: estDepassee,
+    depassee: new Date() > dateEcheance,
     libelle: `${dateFormatee} à ${hFin}h${mFin}`,
   };
 }
@@ -118,6 +120,7 @@ function ContenuAdmin() {
 
   // Modale pour le Bilan / Clôture du soir
   const [modaleCloture, setModaleCloture] = useState(false);
+  const [modaleListeNoire, setModaleListeNoire] = useState(false);
 
   // Les 7 jours de la semaine
   const TOUS_LES_JOURS = [
@@ -159,6 +162,9 @@ function ContenuAdmin() {
   const [sauvegardeEnCours, setSauvegardeEnCours] = useState(false);
   const [afficherMdp, setAfficherMdp] = useState(false);
 
+  const [maxNoShows, setMaxNoShows] = useState(2);
+  const [numerosBloques, setNumerosBloques] = useState([]);
+
   // Vérification de la session sécurisée au chargement
   useEffect(() => {
     if (!slug) return;
@@ -195,11 +201,14 @@ const chargerDonneesAdmin = async () => {
         setJoursFermeture(
           Array.isArray(dataBoutique.jours_fermeture) ? dataBoutique.jours_fermeture : [0, 1]
         );
+        setMaxNoShows(dataBoutique.max_no_shows !== undefined ? dataBoutique.max_no_shows : 2);
+        setNumerosBloques(data.numerosBloques || []);
       }
 
       if (res.ok) {
         setArticles(data.articles || []);
         setReservations(data.reservations || []);
+        setNumerosBloques(data.numerosBloques || []);
       }
     } catch (err) {
       console.error("Erreur chargement données admin :", err);
@@ -438,6 +447,32 @@ const chargerDonneesAdmin = async () => {
     }
   };
 
+  // Fonction de déblocage d'un numéro de téléphone de la liste noire
+  const debloquerNumero = async (item) => {
+    if (
+      !confirm(
+        `Retirer ${item.prenom || "ce client"} (${item.telephone}) de la liste noire ?`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/boutiques/debloquer-numero", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: item.id, slug }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erreur lors du déblocage");
+
+      await chargerDonneesAdmin();
+    } catch (err) {
+      alert("Erreur : " + err.message);
+    }
+  };
+
   // Préremplir la modale de modification
   const ouvrirModaleModif = (article) => {
     setArticleEnModif(article);
@@ -529,6 +564,7 @@ const chargerDonneesAdmin = async () => {
           messagePause,
           messageAnnonce,
           joursFermeture,
+          maxNoShows,
         }),
       });
 
@@ -666,47 +702,65 @@ const chargerDonneesAdmin = async () => {
           </span>
           <h1 className="text-lg font-bold">{boutique.nom}</h1>
         </div>
-        <div className="flex items-center gap-1 shrink-0">
-          {/* 1. BOUTON BILAN */}
+        <div className="grid grid-cols-2 gap-1 shrink-0">
+          {/* 1. BOUTON BILAN (Haut gauche) */}
           <button
+            type="button"
             onClick={() => setModaleCloture(true)}
-            className="relative flex flex-col items-center justify-center w-14 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700/80 transition active:scale-95 cursor-pointer"
+            className="relative flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700/80 transition active:scale-95 cursor-pointer"
             title="Bilan du soir : pièces à remettre en rayon"
           >
-            <span className="text-sm leading-none">🌙</span>
-            <span className="text-[10px] font-medium text-amber-300 mt-1 leading-none">
+            <span className="text-xs leading-none">🌙</span>
+            <span className="text-[10px] font-semibold text-amber-300 leading-none">
               Bilan
             </span>
-
-            {/* Pastille compteur discrète posée en haut à droite */}
             {articlesNonRetires.length > 0 && (
-              <span className="absolute -top-1 -right-1 bg-amber-500 text-stone-950 text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center shadow-xs">
+              <span className="bg-amber-500 text-stone-950 text-[9px] font-black px-1 py-0.2 rounded-full leading-tight">
                 {articlesNonRetires.length}
               </span>
             )}
           </button>
 
-          {/* 2. BOUTON RÉGLAGES */}
+          {/* 2. BOUTON RÉGLAGES (Haut droite) */}
           <button
+            type="button"
             onClick={() => setModaleReglages(true)}
-            className="flex flex-col items-center justify-center w-14 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700/80 transition active:scale-95 cursor-pointer"
+            className="flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700/80 transition active:scale-95 cursor-pointer"
             title="Réglages de la boutique"
           >
-            <span className="text-sm leading-none">⚙️</span>
-            <span className="text-[10px] font-medium text-amber-400 mt-1 leading-none">
+            <span className="text-xs leading-none">⚙️</span>
+            <span className="text-[10px] font-semibold text-amber-400 leading-none">
               Réglages
             </span>
           </button>
 
-          {/* 3. BOUTON VITRINE */}
+          {/* 3. BOUTON LISTE NOIRE (Bas gauche, sous Bilan) */}
+          <button
+            type="button"
+            onClick={() => setModaleListeNoire(true)}
+            className="relative flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700/80 transition active:scale-95 cursor-pointer"
+            title="Clients sur liste noire"
+          >
+            <span className="text-xs leading-none">🚫</span>
+            <span className="text-[10px] font-semibold text-red-400 leading-none">
+              Bloqués
+            </span>
+            {numerosBloques.length > 0 && (
+              <span className="bg-red-500 text-white text-[9px] font-black px-1 py-0.2 rounded-full leading-tight">
+                {numerosBloques.length}
+              </span>
+            )}
+          </button>
+
+          {/* 4. BOUTON VITRINE (Bas droite, sous Réglages) */}
           <a
             href={`/${boutique.slug}`}
             target="_blank"
-            className="flex flex-col items-center justify-center w-14 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700/80 transition active:scale-95"
+            className="flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700/80 transition active:scale-95"
             title="Ouvrir la vitrine client"
           >
-            <span className="text-sm leading-none">👁️</span>
-            <span className="text-[10px] font-medium text-stone-300 mt-1 leading-none">
+            <span className="text-xs leading-none">👁️</span>
+            <span className="text-[10px] font-semibold text-stone-300 leading-none">
               Vitrine
             </span>
           </a>
@@ -875,7 +929,8 @@ const chargerDonneesAdmin = async () => {
                     const dateRef = resa?.created_at || art.updated_at || art.created_at;
                     const echeance = verifierEcheanceResa(
                       dateRef,
-                      boutique?.heure_fermeture_soir || "18h30"
+                      boutique?.heure_fermeture_soir || "18h30",
+                      boutique?.jours_fermeture
                     );
 
                     return (
@@ -970,6 +1025,80 @@ const chargerDonneesAdmin = async () => {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* MODALE LISTE NOIRE */}
+      {modaleListeNoire && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl space-y-4 max-h-[85vh] flex flex-col">
+            <div className="flex justify-between items-center border-b border-stone-100 pb-3 shrink-0">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-red-600">
+                  Protection boutique
+                </span>
+                <h3 className="text-lg font-bold text-stone-900">
+                  🚫 Clients sur liste noire ({numerosBloques.length})
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModaleListeNoire(false)}
+                className="text-stone-400 hover:text-stone-700 font-bold text-xl px-2 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="overflow-y-auto pr-1 flex-1">
+              {numerosBloques.length === 0 ? (
+                <div className="py-8 text-center space-y-2">
+                  <span className="text-4xl block">✨</span>
+                  <p className="text-sm font-bold text-stone-900">Aucun client bloqué</p>
+                  <p className="text-xs text-stone-500">
+                    Les numéros atteignant votre seuil de no-shows apparaîtront ici.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-xs text-stone-500 mb-2">
+                    Numéro(s) bloqué(s) pour la réservation en ligne. Cliquez sur{" "}
+                    <strong>Débloquer</strong> pour les réautoriser :
+                  </p>
+                  <ul className="divide-y divide-stone-100 border border-stone-200 rounded-2xl bg-stone-50">
+                    {numerosBloques.map((item) => (
+                      <li
+                        key={item.id}
+                        className="px-3.5 py-3 flex items-center justify-between gap-2 text-xs"
+                      >
+                        <div className="min-w-0">
+                          <span className="font-bold text-stone-900 block truncate">
+                            {item.prenom || "Client(e)"}
+                          </span>
+                          <span className="font-mono text-[11px] text-stone-600 block">
+                            📞 {item.telephone}
+                          </span>
+                          {item.motif && (
+                            <span className="text-[10px] text-stone-400 block mt-0.5">
+                              {item.motif}
+                            </span>
+                          )}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => debloquerNumero(item)}
+                          className="shrink-0 bg-white hover:bg-emerald-50 text-stone-700 hover:text-emerald-700 border border-stone-300 hover:border-emerald-300 font-semibold text-[11px] px-3 py-2 rounded-xl transition cursor-pointer shadow-2xs"
+                        >
+                          🔓 Débloquer
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -1412,6 +1541,25 @@ const chargerDonneesAdmin = async () => {
                       <option value={2}>2 articles max à la fois</option>
                       <option value={3}>3 articles max à la fois</option>
                     </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-stone-700 mb-1">
+                      🚫 Blocage automatique (liste noire) :
+                    </label>
+                    <select
+                      value={maxNoShows}
+                      onChange={(e) => setMaxNoShows(Number(e.target.value))}
+                      className="w-full border border-stone-300 rounded-xl px-3.5 py-2 text-sm font-semibold text-stone-900 bg-white"
+                    >
+                      <option value={1}>Après 1 no-show (Strict)</option>
+                      <option value={2}>Après 2 no-shows (Recommandé)</option>
+                      <option value={3}>Après 3 no-shows (Souple)</option>
+                      <option value={0}>Désactivé (Blocage manuel uniquement)</option>
+                    </select>
+                    <p className="text-[11px] text-stone-400 mt-1">
+                      Ajoute automatiquement le numéro en liste noire dès que ce nombre d'absences est atteint.
+                    </p>
                   </div>
 
                   <div>

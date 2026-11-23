@@ -13,7 +13,7 @@ export async function GET(request) {
   const { data: boutique, error: boutiqueError } = await supabaseAdmin
     .from("boutiques")
     .select(
-      "id, slug, nom, telephone_pro, email, max_articles_par_client, heure_fermeture_soir, en_pause, message_pause, message_annonce, jours_fermeture"
+      "id, slug, nom, telephone_pro, email, max_articles_par_client, heure_fermeture_soir, en_pause, message_pause, message_annonce, jours_fermeture, max_no_shows"
     )
     .eq("slug", slug)
     .maybeSingle();
@@ -49,9 +49,17 @@ export async function GET(request) {
     reservations = dataResa || [];
   }
 
+  // Récupération des numéros sur liste noire
+  const { data: numerosBloques } = await supabaseAdmin
+    .from("numeros_bloques")
+    .select("id, prenom, telephone, motif, created_at")
+    .eq("boutique_id", boutique.id)
+    .order("created_at", { ascending: false });
+
   return NextResponse.json({
     boutique,
     articles: articles || [],
     reservations,
+    numerosBloques: numerosBloques || [],
   });
 }

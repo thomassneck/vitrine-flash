@@ -9,7 +9,8 @@ CREATE TABLE boutiques (
   max_articles_par_client INT DEFAULT 1,
   en_pause BOOLEAN DEFAULT false,
   message_pause TEXT DEFAULT 'La boutique est actuellement fermée pour congés. Les réservations sont temporairement suspendues.',
-  message_annonce TEXT DEFAULT NULL;
+  message_annonce TEXT DEFAULT NULL,
+  max_no_shows INT default 2;
 
 -- S'assurer que heure_fermeture_soir existe
 ALTER TABLE boutiques 
@@ -60,11 +61,12 @@ CREATE TABLE liste_attente (
 -- Index pour retrouver instantanément la cliente prioritaire (FIFO)
 CREATE INDEX idx_liste_attente_ordre ON liste_attente (article_id, created_at ASC);
 
-CREATE TABLE IF NOT EXISTS numeros_bloques (
+CREATE TABLE IF NOT EXISTS public.numeros_bloques (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  boutique_id UUID REFERENCES boutiques(id) ON DELETE CASCADE,
+  boutique_id UUID REFERENCES public.boutiques(id) ON DELETE CASCADE,
   telephone TEXT NOT NULL,
-  motif TEXT DEFAULT 'Non-présentation en boutique (no-show)',
+  prenom TEXT,
+  motif TEXT DEFAULT 'Blocage automatique (no-show)',
   created_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(boutique_id, telephone)
 );
@@ -76,35 +78,50 @@ ON numeros_bloques (boutique_id, telephone);
 -- Politiques de sécurité RLS
 ALTER TABLE numeros_bloques ENABLE ROW LEVEL SECURITY;
 
--- 1. Fonction de vérification et d'auto-blacklist
-CREATE OR REPLACE FUNCTION trigger_verifier_no_shows()
+-- 2. Fonction déclenchée automatiquement à chaque mise à jour de réservation
+CREATE OR REPLACE FUNCTION public.trigger_auto_blacklist_no_show()
 RETURNS TRIGGER AS $$
 DECLARE
   compteur_no_shows INT;
   id_boutique UUID;
+  seuil_max INT;
 BEGIN
-  -- On déclenche UNIQUEMENT si le statut passe à 'annulee' AVEC le motif 'no_show'
-  IF (NEW.statut = 'annulee' AND NEW.motif_annulation = 'no_show') 
-     AND (OLD.statut IS DISTINCT FROM NEW.statut) THEN
-    
-    SELECT boutique_id INTO id_boutique FROM articles WHERE id = NEW.article_id;
+  -- On déclenche uniquement quand une réservation passe en 'annulee' avec le motif 'no_show'
+  IF (NEW.statut = 'annulee' AND NEW.motif_annulation = 'no_show')
+     AND (OLD.motif_annulation IS DISTINCT FROM 'no_show') THEN
 
-    SELECT COUNT(*) INTO compteur_no_shows
-    FROM reservations r
-    JOIN articles a ON a.id = r.article_id
-    WHERE a.boutique_id = id_boutique
-      AND r.telephone_cliente = NEW.telephone_cliente
-      AND r.motif_annulation = 'no_show';
+    -- Récupérer la boutique et son seuil paramétré (max_no_shows)
+    SELECT a.boutique_id, COALESCE(b.max_no_shows, 2)
+    INTO id_boutique, seuil_max
+    FROM public.articles a
+    JOIN public.boutiques b ON b.id = a.boutique_id
+    WHERE a.id = NEW.article_id;
 
-    -- Au 2ème no show avéré : blocage automatique
-    IF compteur_no_shows >= 2 AND NEW.telephone_cliente IS NOT NULL THEN
-      INSERT INTO numeros_bloques (boutique_id, telephone, motif)
-      VALUES (
-        id_boutique, 
-        NEW.telephone_cliente, 
-        'Blocage auto : 2 réservations non honorées'
-      )
-      ON CONFLICT (boutique_id, telephone) DO NOTHING;
+    -- Si le blocage automatique est activé (seuil_max > 0)
+    IF seuil_max > 0 AND NEW.telephone_client IS NOT NULL THEN
+
+      -- Compter le nombre total de no-shows de ce numéro pour cette boutique
+      SELECT COUNT(*) INTO compteur_no_shows
+      FROM public.reservations r
+      JOIN public.articles a ON a.id = r.article_id
+      WHERE a.boutique_id = id_boutique
+        AND r.telephone_client = NEW.telephone_client
+        AND r.motif_annulation = 'no_show';
+
+      -- Si le seuil paramétré est atteint ou dépassé -> inscription en liste noire
+      IF compteur_no_shows >= seuil_max THEN
+        INSERT INTO public.numeros_bloques (boutique_id, telephone, prenom, motif)
+        VALUES (
+          id_boutique,
+          NEW.telephone_client,
+          NEW.prenom_client,
+          'Blocage auto : ' || compteur_no_shows || ' no-show(s)'
+        )
+        ON CONFLICT (boutique_id, telephone) DO UPDATE
+        SET prenom = COALESCE(EXCLUDED.prenom, public.numeros_bloques.prenom),
+            motif = EXCLUDED.motif;
+      END IF;
+
     END IF;
   END IF;
 
@@ -112,13 +129,12 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 2. Attacher le trigger sur la table reservations
-DROP TRIGGER IF EXISTS trg_auto_blacklist_no_show ON reservations;
-
+-- 3. Attacher le trigger sur la table reservations
+DROP TRIGGER IF EXISTS trg_auto_blacklist_no_show ON public.reservations;
 CREATE TRIGGER trg_auto_blacklist_no_show
-AFTER UPDATE OF statut ON reservations
+AFTER UPDATE ON public.reservations
 FOR EACH ROW
-EXECUTE FUNCTION trigger_verifier_no_shows();
+EXECUTE FUNCTION public.trigger_auto_blacklist_no_show();
 
 
 --------------------

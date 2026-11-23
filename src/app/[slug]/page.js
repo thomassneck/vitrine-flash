@@ -4,31 +4,40 @@ import { useEffect, useState, Suspense } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
-function calculerDelaiAffichage(dateCreationISO, heureCloture = "19h00") {
+function calculerDelaiAffichage(
+  dateCreationISO,
+  heureCloture = "18h30",
+  joursFermeture = [0, 1]
+) {
   if (!dateCreationISO) return heureCloture;
 
+  const NOMS_JOURS = ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"];
   const dateResa = new Date(dateCreationISO);
   const dateResaFr = new Date(dateResa.toLocaleString("en-US", { timeZone: "Europe/Paris" }));
   const heure = dateResaFr.getHours();
   const jour = dateResaFr.getDay();
 
-  // 1. Réservé le matin (< 14h) du mardi au samedi
-  if (heure < 14 && jour !== 0 && jour !== 1) {
+  const fermetures = Array.isArray(joursFermeture) ? joursFermeture : [0, 1];
+  const estFermeCeJourLa = fermetures.includes(jour);
+
+  // 1. Matin d'un jour d'ouverture
+  if (heure < 14 && !estFermeCeJourLa) {
     return `ce soir ${heureCloture}`;
   }
 
-  // 2. Samedi après 14h ou Dimanche
-  if (jour === 0 || (jour === 6 && heure >= 14)) {
-    return "mardi 14h00";
+  // 2. Après-midi, soir ou jour fermé -> prochain jour ouvré à 14h00
+  let prochainJour = (jour + 1) % 7;
+  let compteur = 0;
+  while (fermetures.includes(prochainJour) && compteur < 7) {
+    prochainJour = (prochainJour + 1) % 7;
+    compteur++;
   }
 
-  // 3. Lundi (fermeture)
-  if (jour === 1) {
-    return `mardi ${heureCloture}`;
+  if (prochainJour === (jour + 1) % 7 && !estFermeCeJourLa) {
+    return "demain 14h00";
   }
 
-  // 4. Après 14h en semaine (ex: 15h35)
-  return "demain 14h00";
+  return `${NOMS_JOURS[prochainJour]} 14h00`;
 }
 
 function ContenuVitrine() {

@@ -44,7 +44,7 @@ export async function POST(request) {
     }
 
     // 3. Si l'article redevient disponible : annuler la réservation active avec son motif et avertir la file d'attente
-    if (nouveauStatut === "disponible") {
+if (nouveauStatut === "disponible") {
       const { error: resaError } = await supabaseAdmin
         .from("reservations")
         .update({
@@ -52,13 +52,16 @@ export async function POST(request) {
           motif_annulation: motifAnnulation || "libere",
         })
         .eq("article_id", articleId)
-        .neq("statut", "annulee"); // Ne modifie que la réservation en cours, pas les anciennes déjà annulées
+        .neq("statut", "annulee");
 
       if (resaError) {
         console.error("Erreur mise à jour réservation :", resaError);
+        return NextResponse.json(
+          { error: "Erreur BDD réservation : " + resaError.message },
+          { status: 500 }
+        );
       }
 
-      // Exécution directe pour que Vercel ne coupe pas l'envoi d'e-mail
       try {
         await notifierPremiereEnAttente(articleId);
       } catch (errLiberer) {

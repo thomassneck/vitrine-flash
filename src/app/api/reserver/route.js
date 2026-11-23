@@ -84,13 +84,37 @@ export async function POST(request) {
       );
     }
 
+    // Vérification de la liste noire pour cette boutique
+    const { data: estBloque } = await supabaseAdmin
+      .from("numeros_bloques")
+      .select("id")
+      .eq("boutique_id", boutique.id)
+      .eq("telephone", telNettoye)
+      .maybeSingle();
+
+    if (estBloque) {
+      // Remettre l'article en disponible puisque la réservation est refusée
+      await supabaseAdmin
+        .from("articles")
+        .update({ statut: "disponible" })
+        .eq("id", article_id);
+
+      return NextResponse.json(
+        {
+          error:
+            "Ce numéro de téléphone a cumulé une ou plusieurs réservations non honorées.\nLes réservations en ligne sont suspendues pour ce numéro.",
+        },
+        { status: 403 }
+      );
+    }    
+
     // 4. Contrôle du quota par numéro de téléphone pour cette boutique
     const { data: resasEnCours, error: verifError } = await supabaseAdmin
       .from('reservations')
       .select('id, article_id, articles!inner(boutique_id)')
-      .eq('telephone_cliente', telNettoye)
+      .eq('telephone_client', telNettoye)
       .eq('articles.boutique_id', boutique.id)
-      .in('statut', ['validee_cabine', 'attente_sms', 'confirme']);
+      .in('statut', ['reserve', 'attente_sms', 'confirme']);
 
     if (verifError) {
       console.error("Erreur vérification quota:", verifError);
@@ -115,14 +139,14 @@ export async function POST(request) {
       boutique?.heure_fermeture_soir
     );
 
-    // 5. Enregistrement de la réservation (sans taille_souhaitee)
+    // 5. Enregistrement de la réservation
     const { error: insertError } = await supabaseAdmin.from('reservations').insert({
       code_resa: codeResa,
       article_id,
       prenom_client: prenom.trim(),
       telephone_client: telNettoye,
       canal: canal || 'web',
-      statut: 'validee_cabine'
+      statut: 'reserve'
     });
 
     if (insertError) {
