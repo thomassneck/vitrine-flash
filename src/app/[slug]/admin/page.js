@@ -15,8 +15,8 @@ async function compresserPhoto(file) {
       img.onload = () => {
         const canvas = document.createElement("canvas");
         const MAX_WIDTH = 800; // Largeur idéale pour mobile
-        const scaleSize = MAX_WIDTH / img.width;
-        canvas.width = MAX_WIDTH;
+        const scaleSize = Math.min(1, MAX_WIDTH / img.width);
+        canvas.width = img.width * scaleSize;
         canvas.height = img.height * scaleSize;
 
         const ctx = canvas.getContext("2d");
@@ -24,9 +24,9 @@ async function compresserPhoto(file) {
 
         canvas.toBlob(
           (blob) => {
-            resolve(new File([blob], `pepite-${Date.now()}.webp`, { type: "image/webp" }));
+            resolve(new File([blob], `article-${Date.now()}.jpg`, { type: "image/jpeg" }));
           },
-          "image/webp",
+          "image/jpeg",
           0.8 // Qualité 80%
         );
       };
@@ -324,7 +324,10 @@ const chargerDonneesAdmin = async () => {
       // 2. Upload de l'image sur Supabase Storage (DEPUIS LE FRONTEND)
       const { error: uploadError } = await supabase.storage
         .from("photos-vitrine")
-        .upload(cheminFichier, imageCompressee);
+        .upload(cheminFichier, imageCompressee, {
+        contentType: imageCompressee.type,
+        upsert: false,
+        });
 
       if (uploadError) throw uploadError;
 
