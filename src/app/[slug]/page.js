@@ -294,7 +294,7 @@ function ContenuVitrine() {
                   {/* ZONE PHOTO + CLIC POUR ZOOM */}
                   <div
                     onClick={() => setArticleApercu(article)}
-                    className="relative aspect-3/4 bg-stone-100 cursor-pointer group"
+                    className="relative aspect-[3/4] w-full bg-stone-100 overflow-hidden cursor-pointer group"
                     title="Cliquer pour agrandir"
                   >
                     <img
